@@ -55,6 +55,7 @@ func (d *dlnaServer) start(ctx context.Context, logf func(string)) {
 		IgnoreHidden:        true,
 		IgnoreUnreadable:    true,
 		NotifyInterval:      30 * time.Second,
+		AllowedIpNets:       localInterfaceNetworks(),
 		Logger:              logger,
 	}
 	if err := s.Init(); err != nil {
@@ -88,4 +89,57 @@ func commandExists(name string) bool {
 	}
 	_, err := exec.LookPath(name)
 	return err == nil
+}
+
+func localInterfaceNetworks() []*net.IPNet {
+	var nets []*net.IPNet
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return fallbackLocalNetworks()
+	}
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var network *net.IPNet
+			switch v := addr.(type) {
+			case *net.IPNet:
+				network = &net.IPNet{IP: append(net.IP(nil), v.IP...), Mask: append(net.IPMask(nil), v.Mask...)}
+			case *net.IPAddr:
+				if v.IP.To4() != nil {
+					network = &net.IPNet{IP: v.IP.To4(), Mask: net.CIDRMask(32, 32)}
+				} else if v.IP != nil {
+					network = &net.IPNet{IP: v.IP, Mask: net.CIDRMask(128, 128)}
+				}
+			}
+			if network == nil || network.IP == nil {
+				continue
+			}
+			duplicate := false
+			for _, existing := range nets {
+				if existing.String() == network.String() {
+					duplicate = true
+					break
+				}
+			}
+			if !duplicate {
+				nets = append(nets, network)
+			}
+		}
+	}
+	if len(nets) == 0 {
+		return fallbackLocalNetworks()
+	}
+	return nets
+}
+
+func fallbackLocalNetworks() []*net.IPNet {
+	_, ipv4, _ := net.ParseCIDR("192.168.0.0/16")
+	_, ipv6, _ := net.ParseCIDR("fe80::/10")
+	return []*net.IPNet{ipv4, ipv6}
 }
