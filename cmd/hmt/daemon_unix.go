@@ -18,6 +18,9 @@ func daemonStart(cfg config.Config) error {
 	if app.ISRunning(cfg.Server.Socket) {
 		return fmt.Errorf("daemon already running")
 	}
+	if err := app.ClearStaleSocket(cfg.Server.Socket); err != nil {
+		return fmt.Errorf("clear stale daemon socket: %w", err)
+	}
 	if err := os.MkdirAll(cfg.LogDir, 0o755); err != nil {
 		return fmt.Errorf("create daemon log directory: %w", err)
 	}
@@ -34,7 +37,11 @@ func daemonStart(cfg config.Config) error {
 	}
 
 	cmd := exec.Command(exe, "daemon", "run")
-	cmd.Env = append(os.Environ(), "HERMIT_CONFIG="+os.Getenv("HERMIT_CONFIG"))
+	if v := os.Getenv("HERMIT_CONFIG"); v != "" {
+		cmd.Env = append(os.Environ(), "HERMIT_CONFIG="+v)
+	} else {
+		cmd.Env = os.Environ()
+	}
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.Stdin = nil
@@ -49,7 +56,6 @@ func daemonStart(cfg config.Config) error {
 	go func() { exited <- cmd.Wait() }()
 
 	// Do not report success until the child has created its RPC socket.
-	// This catches immediate startup failures that were previously hidden.
 	for i := 0; i < 50; i++ {
 		if app.ISRunning(cfg.Server.Socket) {
 			fmt.Printf("daemon started (log: %s)\n", logPath)

@@ -27,7 +27,7 @@ func TestArchiveOrgSearch(t *testing.T) {
 	defer server.Close()
 
 	a := NewArchiveOrg(server.Client(), server.URL)
-	hits, err := a.Search(context.Background(), "living dead", 0)
+	hits, err := a.Search(context.Background(), "living dead", hermit.KindMovie)
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
