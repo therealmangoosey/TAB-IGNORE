@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	illegalRe = regexp.MustCompile(`[\\/:*?"<>|]`)
+	illegalRe = regexp.MustCompile(`[\\/*?"<>|]`)
 	spaceRe   = regexp.MustCompile(`\s+`)
 	emojiRe   = regexp.MustCompile(`[\x{1F000}-\x{1FAFF}\x{2600}-\x{27BF}\x{FE0F}]`)
 )
@@ -20,6 +20,9 @@ var (
 func Clean(s string) string {
 	s = emojiRe.ReplaceAllString(s, "")
 	s = strings.ReplaceAll(s, "\u200b", "")
+	// Colons become a spaced separator so names remain readable on platforms
+	// where ':' is not a legal filename character.
+	s = strings.ReplaceAll(s, ":", " - ")
 	s = illegalRe.ReplaceAllString(s, "-")
 	s = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) || unicode.Is(unicode.Other, r) {
@@ -71,11 +74,7 @@ func truncateTitle(s string, maxRunes int) string {
 	if len(r) <= maxRunes {
 		return s
 	}
-	// Cut at a word boundary and never add an ellipsis.
 	end := maxRunes
-	for end > 0 && !unicode.IsSpace(r[end-1]) && !unicode.IsLetter(r[end-1]) && !unicode.IsDigit(r[end-1]) {
-		end--
-	}
 	boundary := strings.LastIndexFunc(string(r[:end]), unicode.IsSpace)
 	if boundary > maxRunes/2 {
 		return strings.TrimSpace(string(r[:boundary]))
@@ -106,8 +105,7 @@ func Itoa(n int) string {
 	return string(b[i:])
 }
 
-// Line returns the screen-facing label for a show/episode row. It deliberately
-// contains no provider, host, quality, or URL information.
+// Line returns the screen-facing label for a show/episode row.
 func Line(showTitle string, season, episode int, episodeTitle string) string {
 	s := Clean(showTitle)
 	if season > 0 || episode > 0 {
@@ -119,9 +117,7 @@ func Line(showTitle string, season, episode int, episodeTitle string) string {
 	return s
 }
 
-// Redact replaces provider/host names with stable pseudonyms. It is applied to
-// JSON output, logs, and doctor bundles unless --debug is explicitly set.
-// Unknown strings are left untouched so internal errors remain readable.
+// Redact replaces provider/host names with stable pseudonyms.
 func Redact(s string, providerHosts map[string]string) string {
 	if len(providerHosts) == 0 {
 		return s
