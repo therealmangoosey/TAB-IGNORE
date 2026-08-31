@@ -161,15 +161,26 @@ func Serve(socket string, backend Backend) (*net.UnixListener, *rpc.Server, erro
 		return nil, nil, err
 	}
 	if info, err := os.Stat(socket); err == nil && info.Mode()&os.ModeSocket != 0 {
-		os.Remove(socket)
+		if err := os.Remove(socket); err != nil {
+			return nil, nil, fmt.Errorf("remove stale socket: %w", err)
+		}
+	} else if err != nil && !os.IsNotExist(err) {
+		return nil, nil, err
 	}
-	ln, err := net.Listen("unix", socket)
+	addr, err := net.ResolveUnixAddr("unix", socket)
 	if err != nil {
 		return nil, nil, err
 	}
+	ln, err := net.ListenUnix("unix", addr)
+	if err != nil {
+		return nil, nil, err
+	}
+	_ = os.Chmod(socket, 0o600)
+
 	server := rpc.NewServer()
 	if err := server.RegisterName("hermit", &Service{Backend: backend}); err != nil {
-		ln.Close()
+		_ = ln.Close()
+		_ = os.Remove(socket)
 		return nil, nil, err
 	}
 	go func() {
