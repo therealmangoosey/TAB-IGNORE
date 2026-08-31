@@ -45,15 +45,23 @@ func daemonStart(cfg config.Config) error {
 	}
 	_ = logFile.Close()
 
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+
 	// Do not report success until the child has created its RPC socket.
-	// This also catches immediate startup failures that were previously hidden.
+	// This catches immediate startup failures that were previously hidden.
 	for i := 0; i < 50; i++ {
 		if app.ISRunning(cfg.Server.Socket) {
 			fmt.Printf("daemon started (log: %s)\n", logPath)
 			return nil
 		}
-		if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+		select {
+		case err := <-exited:
+			if err != nil {
+				return fmt.Errorf("daemon exited during startup: %w; see %s", err, logPath)
+			}
 			return fmt.Errorf("daemon exited during startup; see %s", logPath)
+		default:
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
