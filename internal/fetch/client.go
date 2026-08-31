@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/therealmangoosey/TAB-IGNORE/internal/vpn"
 )
 
 // AllowListTransport enforces an explicit origin allow-list. Every redirect is
@@ -44,6 +46,8 @@ func (t *AllowListTransport) allow(origin string) bool {
 }
 
 // NewClient builds a hardened client with bounded connection reuse.
+// When `hmt vpn up` is active, only sockets created by this client are marked
+// for the VPN routing table. Other device/application traffic is unaffected.
 func NewClient(allowed []string) *http.Client {
 	allowedMap := map[string]bool{}
 	for _, a := range allowed {
@@ -51,10 +55,12 @@ func NewClient(allowed []string) *http.Client {
 			allowedMap[a] = true
 		}
 	}
+	dialContext := vpn.DialContext
 	tr := &http.Transport{
 		MaxIdleConns:        8,
 		MaxIdleConnsPerHost: 4,
 		IdleConnTimeout:     30 * time.Second,
+		DialContext:         dialContext,
 	}
 	return &http.Client{
 		Transport: &RedirectCheck{Next: &AllowListTransport{Base: tr, Allowed: allowedMap}},
