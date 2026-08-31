@@ -33,14 +33,11 @@ func newDLNAServer(library *lib.Library) *dlnaServer {
 	return &dlnaServer{library: library, name: name, addr: addr}
 }
 
-// start launches the mature UPnP/DLNA MediaServer implementation. The server
-// exposes the library as a browseable filesystem, serves HTTP Range requests,
-// and can use ffprobe/ffmpeg when available for compatibility conversions.
 func (d *dlnaServer) start(ctx context.Context, logf func(string)) {
 	ln, err := net.Listen("tcp", d.addr)
 	if err != nil {
 		if logf != nil {
-			logf("DLNA listen failed: %v", err)
+			logf("DLNA listen failed: " + err.Error())
 		}
 		return
 	}
@@ -59,13 +56,13 @@ func (d *dlnaServer) start(ctx context.Context, logf func(string)) {
 	if err := s.Init(); err != nil {
 		_ = ln.Close()
 		if logf != nil {
-			logf("DLNA init failed: %v", err)
+			logf("DLNA init failed: " + err.Error())
 		}
 		return
 	}
 	d.server = s
 	if logf != nil {
-		logf("DLNA media server listening on %s as %q", ln.Addr().String(), d.name)
+		logf("DLNA media server listening on " + ln.Addr().String() + " as " + d.name)
 	}
 
 	done := make(chan error, 1)
@@ -76,7 +73,7 @@ func (d *dlnaServer) start(ctx context.Context, logf func(string)) {
 	}()
 	go func() {
 		if err := <-done; err != nil && ctx.Err() == nil && logf != nil {
-			logf("DLNA server stopped: %v", err)
+			logf("DLNA server stopped: " + err.Error())
 		}
 	}()
 }
