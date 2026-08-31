@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-) 
+)
 
 // Stats describes a filesystem.
 type Stats struct {
@@ -26,13 +26,13 @@ func (s Stats) SpareBytes() int64 {
 	return n
 }
 
-// Info returns filesystem stats for a path.
-func Info(path string) (Stats, error) {
+// Info returns filesystem stats for a path, including the configured reserve.
+func Info(path string, reserve int64) (Stats, error) {
 	free, total, err := statfs(path)
 	if err != nil {
 		return Stats{}, err
 	}
-	return Stats{Path: path, FreeBytes: free, TotalBytes: total}, nil
+	return Stats{Path: path, FreeBytes: free, TotalBytes: total, ReserveBytes: reserve}, nil
 }
 
 // Ensure creates the path and verifies it is writable.
