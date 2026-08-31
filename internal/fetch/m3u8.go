@@ -41,7 +41,7 @@ func ParsePlaylist(data []byte) (*Playlist, error) {
 		case strings.HasPrefix(line, "#EXT-X-MEDIA"):
 			p.Media = false
 		case strings.HasPrefix(line, "#EXT-X-TARGETDURATION:"):
-			fmt.Sscanf(strings.TrimPrefix(line, "#EXT-X-TARGETDURATION:"), "%f", &p.TargetDur)
+			_, _ = fmt.Sscanf(strings.TrimPrefix(line, "#EXT-X-TARGETDURATION:"), "%f", &p.TargetDur)
 		case strings.HasPrefix(line, "#EXT-X-STREAM-INF:"):
 			hasPending = true
 			pending = Variant{}
@@ -56,7 +56,7 @@ func ParsePlaylist(data []byte) (*Playlist, error) {
 				case "RESOLUTION":
 					pending.Resolution = v
 				case "BANDWIDTH":
-					fmt.Sscanf(v, "%d", &pending.Bandwidth)
+					_, _ = fmt.Sscanf(v, "%d", &pending.Bandwidth)
 				case "CODECS":
 					pending.Codec = v
 				case "AUDIO":
@@ -67,7 +67,7 @@ func ParsePlaylist(data []byte) (*Playlist, error) {
 			pending.URL = line
 			p.Variants = append(p.Variants, pending)
 			hasPending = false
-		case len(line) > 0 && line[0] != '#':
+		case line[0] != '#':
 			p.Segments = append(p.Segments, line)
 		}
 	}
@@ -81,25 +81,32 @@ func ParsePlaylist(data []byte) (*Playlist, error) {
 	return p, nil
 }
 
-// ChooseVariant picks the best media playlist from a master playlist, preferring
-// 1080p and ignoring AV1 when a better codec is available.
+// ChooseVariant picks the best non-AV1 rendition, preferring 1080p and then
+// bandwidth. AV1 is used only when no non-AV1 variant exists because the target
+// Android hardware profile is designed around hardware H.264/HEVC decode.
 func (p *Playlist) ChooseVariant() (Variant, error) {
 	if len(p.Variants) == 0 {
 		return Variant{}, fmt.Errorf("playlist has no variants")
 	}
-	best := p.Variants[0]
-	bestScore := -1
+	eligible := p.Variants[:0]
 	for _, v := range p.Variants {
-		score := 0
+		if !strings.Contains(strings.ToLower(v.Codec), "av01") && !strings.Contains(strings.ToLower(v.Codec), "av1") {
+			eligible = append(eligible, v)
+		}
+	}
+	if len(eligible) == 0 {
+		eligible = p.Variants
+	}
+
+	best := eligible[0]
+	bestScore := -1
+	for _, v := range eligible {
+		score := v.Bandwidth / 10000
 		if strings.Contains(v.Resolution, "1920x1080") || strings.Contains(v.Resolution, "1080") {
 			score += 100
 		} else if strings.Contains(v.Resolution, "1280x720") || strings.Contains(v.Resolution, "720") {
 			score += 70
 		}
-		if !strings.Contains(strings.ToLower(v.Codec), "av1") {
-			score += 10
-		}
-		score += v.Bandwidth / 10000
 		if score > bestScore {
 			bestScore = score
 			best = v
@@ -125,14 +132,14 @@ func isAbsolute(ref string) bool {
 	return strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://") || strings.HasPrefix(ref, "file://")
 }
 
-// ReadPlaylist reads a bounded playlist body (max 4 MiB).
+// ReadPlaylist reads a bounded playlist body (maximum 4 MiB).
 func ReadPlaylist(r io.Reader) ([]byte, error) {
+	const max = 4 << 20
 	var b bytes.Buffer
-	_, err := io.Copy(&b, io.LimitReader(r, 4<<20))
-	if err != nil {
+	if _, err := io.Copy(&b, io.LimitReader(r, max+1)); err != nil {
 		return nil, err
 	}
-	if b.Len() > 4<<20 {
+	if b.Len() > max {
 		return nil, fmt.Errorf("playlist too large")
 	}
 	return b.Bytes(), nil
