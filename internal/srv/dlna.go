@@ -23,7 +23,6 @@ import (
 
 const dlnaHTTPAddrDefault = "0.0.0.0:8789"
 
-// One tiny fallback icon keeps clients from tripping over an empty icon list.
 const fallbackIconPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
 
 type dlnaServer struct {
@@ -103,8 +102,6 @@ func (d *dlnaServer) start(ctx context.Context, logf func(string)) {
 		}
 		return
 	}
-	// dms may normalize the root during Init; restore our absolute library root
-	// so resource and browse paths continue to point at Hermit's actual library.
 	s.RootObjectPath = root
 	d.server = s
 	if logf != nil {
@@ -186,11 +183,7 @@ func fallbackLocalNetworks() []*net.IPNet {
 }
 
 func (d *dlnaServer) browseRoot() (string, error) {
-	root, err := filepath.Abs(d.library.Root)
-	if err != nil {
-		return "", err
-	}
-	return root, nil
+	return filepath.Abs(d.library.Root)
 }
 
 func (d *dlnaServer) browsePath(objectID string) (string, string, error) {
@@ -204,6 +197,11 @@ func (d *dlnaServer) browsePath(objectID string) (string, string, error) {
 	}
 	if pathID == "" || pathID == "0" || pathID == "/" {
 		return root, "/", nil
+	}
+	for _, segment := range strings.Split(filepath.ToSlash(pathID), "/") {
+		if segment == ".." {
+			return "", "", fmt.Errorf("object path escapes library")
+		}
 	}
 	pathID = filepath.ToSlash(filepath.Clean("/" + pathID))
 	rel := strings.TrimPrefix(pathID, "/")
@@ -265,7 +263,8 @@ func (d *dlnaServer) makeObject(pathID string, info os.FileInfo, host string) (i
 	}
 	if info.IsDir() {
 		count := 0
-		entries, err := os.ReadDir(filepath.Join(mustRoot(d.library.Root), filepath.FromSlash(strings.TrimPrefix(pathID, "/"))))
+		root := mustRoot(d.library.Root)
+		entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(pathID, "/"))))
 		if err == nil {
 			for _, entry := range entries {
 				if strings.HasPrefix(entry.Name(), ".") {
@@ -283,9 +282,9 @@ func (d *dlnaServer) makeObject(pathID string, info os.FileInfo, host string) (i
 		return nil, nil
 	}
 	obj.Class = "object.item.videoItem"
-	base := &url.URL{Scheme: "http", Host: host, Path: "/res", RawQuery: url.Values{"path": {pathID}}.Encode()}
+	resourceURL := (&url.URL{Scheme: "http", Host: host, Path: "/res", RawQuery: url.Values{"path": {pathID}}.Encode()}).String()
 	item := upnpav.Item{Object: obj, Res: []upnpav.Resource{{
-		URL: base.String(),
+		URL: resourceURL,
 		ProtocolInfo: fmt.Sprintf("http-get:*:%s:%s", mediaMIME(info.Name()), dlna.ContentFeatures{SupportRange: true}.String()),
 		Size: uint64(info.Size()),
 	}}}
@@ -302,12 +301,12 @@ func (d *dlnaServer) browseDirectChildren(objectPath, rootObjectPath, host, _ st
 	if err != nil {
 		return nil, err
 	}
-	if filepath.Clean(rootObjectPath) != filepath.Clean(root) {
-		rootObjectPath = root
-	}
+	_ = rootObjectPath
 	pathID := filepath.ToSlash(filepath.Clean("/" + objectPath))
-	if pathID == "/" {
-		pathID = "/"
+	for _, segment := range strings.Split(pathID, "/") {
+		if segment == ".." {
+			return nil, fmt.Errorf("object path escapes library")
+		}
 	}
 	full := root
 	if pathID != "/" {
@@ -317,7 +316,7 @@ func (d *dlnaServer) browseDirectChildren(objectPath, rootObjectPath, host, _ st
 	if err != nil {
 		return nil, err
 	}
-	type namedInfo struct { path string; info os.FileInfo }
+	type namedInfo struct{ path string; info os.FileInfo }
 	items := make([]namedInfo, 0, len(entries))
 	for _, entry := range entries {
 		if strings.HasPrefix(entry.Name(), ".") {
@@ -352,12 +351,7 @@ func (d *dlnaServer) browseMetadata(objectPath, rootObjectPath, host, _ string) 
 	if err != nil {
 		return nil, err
 	}
-	if _, err := os.Stat(full); err != nil {
-		return nil, err
-	}
-	if filepath.Clean(rootObjectPath) != filepath.Clean(mustRoot(d.library.Root)) {
-		rootObjectPath = mustRoot(d.library.Root)
-	}
+	_ = rootObjectPath
 	info, err := os.Stat(full)
 	if err != nil {
 		return nil, err
