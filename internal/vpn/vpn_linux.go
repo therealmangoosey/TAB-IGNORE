@@ -30,7 +30,7 @@ func command(name string, args ...string) error {
 
 func ensureRoot() error {
 	if os.Geteuid() != 0 {
-		return errors.New("split-tunnel WireGuard setup requires root; other device traffic is left untouched")
+		return errors.New("split-tunnel WireGuard setup requires root; start hmt in a root shell while the tunnel is enabled")
 	}
 	return nil
 }
@@ -52,7 +52,7 @@ func Up(configPath string) error {
 	}
 	generated := filepath.Join(stateDir, interfaceName+".conf")
 	text := string(data)
-	if !strings.Contains(text, "\nTable =") && !strings.Contains(text, "\nTable=") {
+	if !strings.Contains(strings.ToLower(text), "table = off") && !strings.Contains(strings.ToLower(text), "table=off") {
 		text = addInterfaceSetting(text, "Table = off")
 	}
 	if err := os.WriteFile(generated, []byte(text), 0o600); err != nil {
@@ -62,7 +62,7 @@ func Up(configPath string) error {
 	if err := command("wg-quick", "up", generated); err != nil {
 		return err
 	}
-	if err := command("ip", "rule", "add", "fwmark", fmt.Sprintf("0x%x", DefaultMark), "table", routeTable); err != nil {
+	if err := command("ip", "rule", "add", "fwmark", fmt.Sprintf("0x%x", DefaultMark), "table", routeTable, "priority", "42420"); err != nil {
 		_ = command("wg-quick", "down", generated)
 		return err
 	}
@@ -72,6 +72,7 @@ func Up(configPath string) error {
 		return err
 	}
 	if err := writeState(DefaultMark); err != nil {
+		_ = Down()
 		return err
 	}
 	return nil
@@ -121,7 +122,13 @@ func DialContext(ctx context.Context, network, address string) (net.Conn, error)
 			}); err != nil {
 				return err
 			}
-			return controlErr
+			if controlErr != nil {
+				if errors.Is(controlErr, syscall.EPERM) || errors.Is(controlErr, syscall.EACCES) {
+					return errors.New("cannot mark hmt socket for VPN routing; run the hmt process as root/cap_net_admin")
+				}
+				return controlErr
+			}
+			return nil
 		}
 	}
 	return d.DialContext(ctx, network, address)
