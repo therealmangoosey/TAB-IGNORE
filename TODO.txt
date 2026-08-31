@@ -1,0 +1,16 @@
+# hermit base TODO
+
+This file is deliberately short and machine-readable for follow-up automation.
+
+- Implement configuration loading and validation.
+- Add SQLite migrations and metadata cache.
+- Define RPC request/response types and Unix-socket transport.
+- Implement provider registry and safe initial adapters.
+- Implement download queue, resumable HTTP fetch, integrity checks, and disk-space guards.
+- Implement local HTTP Range streaming and Android player handoff.
+- Add the Bubble Tea TUI described by the plan.
+- Add `hmt doctor` hardware/runtime detection for Tab A profiles and Termux.
+- Add complete unit/integration tests and fixture media.
+- Add Termux install/boot/service helpers.
+- Add cross-platform CI and release packaging.
+- Review every completed subsystem against `PROJECT_PLAN (1).md` before release.
