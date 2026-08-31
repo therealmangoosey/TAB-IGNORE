@@ -19,35 +19,26 @@ import (
 	"github.com/therealmangoosey/TAB-IGNORE/pkg/hermit"
 )
 
-// Queue is the download scheduler.
 type Queue struct {
 	DB       *db.DB
 	Registry *provider.Registry
 	Fetcher  *fetch.Downloader
 	Cfg      config.Config
 
-	mu       sync.Mutex
-	running  map[int64]bool
-	batteryPct int
-	charging bool
+	mu          sync.Mutex
+	running     map[int64]bool
+	batteryPct  int
+	charging    bool
 }
 
-// NewQueue constructs the queue.
 func NewQueue(database *db.DB, reg *provider.Registry, dl *fetch.Downloader, cfg config.Config) *Queue {
 	if dl == nil {
 		max, _ := config.ParseSize(cfg.Power.MaxBytesPerSec)
 		dl = fetch.NewDownloader(fetch.NewClient(nil), max, cfg.Power.ConcurrencyBattery)
 	}
-	return &Queue{
-		DB:       database,
-		Registry: reg,
-		Fetcher:  dl,
-		Cfg:      cfg,
-		running:  map[int64]bool{},
-	}
+	return &Queue{DB: database, Registry: reg, Fetcher: dl, Cfg: cfg, running: map[int64]bool{}}
 }
 
-// SetBattery updates battery state used by power policy.
 func (q *Queue) SetBattery(pct int, charging bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -55,7 +46,6 @@ func (q *Queue) SetBattery(pct int, charging bool) {
 	q.charging = charging
 }
 
-// CheckBattery reports whether new downloads may start.
 func (q *Queue) CheckBattery() (bool, string) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -65,7 +55,6 @@ func (q *Queue) CheckBattery() (bool, string) {
 	return true, ""
 }
 
-// Pump runs until ctx is canceled, processing ready jobs in priority order.
 func (q *Queue) Pump(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -81,18 +70,15 @@ func (q *Queue) Pump(ctx context.Context) {
 }
 
 func (q *Queue) tick(ctx context.Context) {
-	ok, why := q.CheckBattery()
+	ok, _ := q.CheckBattery()
 	if !ok {
 		return
 	}
+	q.mu.Lock()
 	maxConcurrency := q.Cfg.Power.ConcurrencyBattery
 	if q.charging {
 		maxConcurrency = q.Cfg.Power.ConcurrencyCharging
 	}
-	if maxConcurrency <= 0 {
-		maxConcurrency = 2
-	}
-	q.mu.Lock()
 	active := 0
 	for _, running := range q.running {
 		if running {
@@ -100,6 +86,9 @@ func (q *Queue) tick(ctx context.Context) {
 		}
 	}
 	q.mu.Unlock()
+	if maxConcurrency <= 0 {
+		maxConcurrency = 2
+	}
 	if active >= maxConcurrency {
 		return
 	}
@@ -135,13 +124,12 @@ func (q *Queue) runJob(ctx context.Context, job hermit.Job) {
 	job.StartedAt = time.Now()
 	_ = q.DB.UpdateJob(ctx, job)
 
-	// Resolve a provider source if the job did not already carry one.
 	if job.Source.URL == "" {
 		show := q.showTitle(ctx, job)
 		ref := hermit.Ref{Provider: job.Provider, Season: job.Season, Episode: job.Episode, Title: show, Kind: hermit.KindTV}
 		srcs, errs := q.Registry.ResolveAll(ctx, ref)
 		if len(srcs) == 0 {
-			q.failJob(ctx, job, "resolve", firstErr(errs))
+			q.failJob(ctx, job, "resolve", firstErr(errs).Error())
 			return
 		}
 		job.Source = srcs[0]
@@ -199,7 +187,7 @@ func (q *Queue) runJob(ctx context.Context, job hermit.Job) {
 		r, err := mux.Remux(tmpPath, tmp2, scrub.Line(show, job.Season, job.Episode, epTitle), scrub.SafeName(show), "", "", true)
 		if err == nil && r {
 			remuxed = true
-			os.Remove(tmpPath)
+			_ = os.Remove(tmpPath)
 			_ = renameAtomic(tmp2, target)
 		}
 	}
@@ -243,7 +231,9 @@ func (q *Queue) episodeTitle(ctx context.Context, job hermit.Job) string {
 
 func firstErr(errs map[string]error) error {
 	for _, e := range errs {
-		return e
+		if e != nil {
+			return e
+		}
 	}
 	return fmt.Errorf("all providers failed")
 }
@@ -277,7 +267,6 @@ func two(n int) string {
 }
 
 func itoa(n int) string {
-	// small integer converter for job labels
 	if n == 0 {
 		return "0"
 	}
