@@ -2,6 +2,7 @@ package meta
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -24,8 +25,7 @@ func TestShowUsesFreshCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-		t.Fatal("unexpected TMDB request for fresh cache")
-		return nil, nil
+		return nil, errors.New("unexpected TMDB request for fresh cache")
 	})}
 	c := NewClientWithTTL(d, client, "key", time.Hour)
 	got, seasons, episodes, err := c.Show(ctx, hermit.Ref{Kind: hermit.KindTV, TMDBID: 123})
