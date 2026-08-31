@@ -9,6 +9,7 @@ import (
 	"time"
 
 	dms "github.com/anacrolix/dms/dlna/dms"
+	analog "github.com/anacrolix/log"
 	"github.com/therealmangoosey/TAB-IGNORE/internal/lib"
 )
 
@@ -42,6 +43,8 @@ func (d *dlnaServer) start(ctx context.Context, logf func(string)) {
 		return
 	}
 
+	logger := analog.NewLogger("hermit", "dlna")
+	logger.SetHandlers(analog.DiscardHandler)
 	s := &dms.Server{
 		HTTPConn:            ln,
 		FriendlyName:        d.name,
@@ -52,6 +55,7 @@ func (d *dlnaServer) start(ctx context.Context, logf func(string)) {
 		IgnoreHidden:        true,
 		IgnoreUnreadable:    true,
 		NotifyInterval:      30 * time.Second,
+		Logger:              logger,
 	}
 	if err := s.Init(); err != nil {
 		_ = ln.Close()
