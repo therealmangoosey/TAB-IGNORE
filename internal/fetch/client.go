@@ -13,8 +13,6 @@ import (
 	"github.com/therealmangoosey/TAB-IGNORE/internal/vpn"
 )
 
-// AllowListTransport enforces an explicit origin allow-list. Every redirect is
-// re-checked, so a redirect cannot silently jump to an unapproved host.
 type AllowListTransport struct {
 	Base     http.RoundTripper
 	Allowed  map[string]bool
@@ -40,10 +38,6 @@ func (t *AllowListTransport) allow(origin string) bool {
 	return false
 }
 
-// NewClient builds a hardened client with bounded connection reuse. An empty
-// allow-list is intentionally treated as unrestricted because generic user
-// supplied media URLs are a supported Hermit input; callers that know their
-// origins can pass an explicit list.
 func NewClient(allowed []string) *http.Client {
 	allowedMap := map[string]bool{}
 	for _, a := range allowed {
@@ -51,12 +45,11 @@ func NewClient(allowed []string) *http.Client {
 			allowedMap[a] = true
 		}
 	}
-	dialContext := vpn.DialContext
 	tr := &http.Transport{
 		MaxIdleConns:        8,
 		MaxIdleConnsPerHost: 4,
 		IdleConnTimeout:     30 * time.Second,
-		DialContext:         dialContext,
+		DialContext:         vpn.DialContext,
 	}
 	return &http.Client{
 		Transport: &RedirectCheck{Next: &AllowListTransport{
@@ -95,13 +88,11 @@ func NewBoundedRate(maxBytes int64) *BoundedRate {
 	return &BoundedRate{maxBytes: maxBytes, tokens: float64(maxBytes), last: time.Now()}
 }
 
-// Wait blocks until n bytes can be consumed without holding the global rate
-// limiter lock during the sleep.
 func (b *BoundedRate) Wait(n int64) {
 	if n <= 0 {
 		return
 	}
-	for {
+	for n > 0 {
 		b.mu.Lock()
 		now := time.Now()
 		elapsed := now.Sub(b.last).Seconds()
@@ -112,12 +103,17 @@ func (b *BoundedRate) Wait(n int64) {
 			}
 			b.last = now
 		}
-		if b.tokens >= float64(n) {
-			b.tokens -= float64(n)
-			b.mu.Unlock()
-			return
+		chunk := n
+		if chunk > b.maxBytes {
+			chunk = b.maxBytes
 		}
-		need := (float64(n) - b.tokens) / float64(b.maxBytes)
+		if b.tokens >= float64(chunk) {
+			b.tokens -= float64(chunk)
+			b.mu.Unlock()
+			n -= chunk
+			continue
+		}
+		need := (float64(chunk) - b.tokens) / float64(b.maxBytes)
 		b.mu.Unlock()
 		if need > 0 {
 			time.Sleep(time.Duration(need * float64(time.Second)))
