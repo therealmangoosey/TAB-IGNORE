@@ -8,7 +8,6 @@ import (
 
 	"github.com/therealmangoosey/TAB-IGNORE/internal/config"
 	doctorpkg "github.com/therealmangoosey/TAB-IGNORE/internal/doctor"
-	"github.com/therealmangoosey/TAB-IGNORE/pkg/hermit"
 )
 
 // runDoctor intentionally does not construct the full application. Doctor is
@@ -29,22 +28,18 @@ func runDoctor(ctx context.Context, cfg config.Config, args []string) int {
 		return 0
 	}
 
-	// Provider configuration is intentionally omitted here. A doctor run must
-	// not require opening provider clients or the database just to report the
-	// local device state.
 	formatted := doctorpkg.FormatText(st)
 	if strings.TrimSpace(formatted) == "" {
 		formatted = "hermit: no diagnostics available\n"
 	}
 	fmt.Print(formatted)
 
-	// Keep the command honest about paths without opening SQLite.
+	// Keep doctor useful even when the database cannot be opened.
 	if cfg.StateDir != "" {
 		fmt.Printf("state: %s\n", cfg.StateDir)
 	}
 	if cfg.Library.Path != "" {
 		fmt.Printf("library: %s\n", cfg.Library.Path)
 	}
-	_ = hermit.Status{}
 	return 0
 }
