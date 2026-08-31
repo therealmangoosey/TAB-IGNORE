@@ -45,6 +45,9 @@ func scoreSource(src hermit.Source, r *Registry) float64 {
 
 	host := 0.0
 	if stats := r.healthFor(src.URL); stats.Samples > 0 {
+		if !stats.BannedUntil.IsZero() && time.Now().Before(stats.BannedUntil) {
+			return -1.0
+		}
 		host = stats.EWMASuccess
 	} else {
 		host = 0.7
