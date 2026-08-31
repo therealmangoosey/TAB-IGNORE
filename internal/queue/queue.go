@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/therealmangoosey/TAB-IGNORE/internal/config"
-	"github.com/therealmangoey/TAB-IGNORE/internal/disk"
+	"github.com/therealmangoosey/TAB-IGNORE/internal/disk"
 	"github.com/therealmangoosey/TAB-IGNORE/internal/db"
 	"github.com/therealmangoosey/TAB-IGNORE/internal/fetch"
 	"github.com/therealmangoosey/TAB-IGNORE/internal/mux"
