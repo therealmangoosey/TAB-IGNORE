@@ -3,10 +3,10 @@ package srv
 import (
 	"context"
 	"io"
-	"log/slog"
 	"net"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	dms "github.com/anacrolix/dms/dlna/dms"
@@ -34,8 +34,7 @@ func newDLNAServer(library *lib.Library) *dlnaServer {
 	return &dlnaServer{library: library, name: name, addr: addr}
 }
 
-// start launches a mature UPnP/DLNA MediaServer implementation instead of
-// maintaining a partial protocol implementation in Hermit itself. The server
+// start launches the mature UPnP/DLNA MediaServer implementation. The server
 // exposes the library as a browseable filesystem, serves HTTP Range requests,
 // and can use ffprobe/ffmpeg when available for compatibility conversions.
 func (d *dlnaServer) start(ctx context.Context, logf func(string)) {
@@ -47,7 +46,6 @@ func (d *dlnaServer) start(ctx context.Context, logf func(string)) {
 		return
 	}
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	s := &dms.Server{
 		HTTPConn:            ln,
 		FriendlyName:        d.name,
@@ -58,7 +56,6 @@ func (d *dlnaServer) start(ctx context.Context, logf func(string)) {
 		IgnoreHidden:        true,
 		IgnoreUnreadable:    true,
 		NotifyInterval:      30 * time.Second,
-		Logger:              logger,
 	}
 	if err := s.Init(); err != nil {
 		_ = ln.Close()
@@ -86,6 +83,11 @@ func (d *dlnaServer) start(ctx context.Context, logf func(string)) {
 }
 
 func commandExists(name string) bool {
+	if strings.TrimSpace(name) == "" {
+		return false
+	}
 	_, err := exec.LookPath(name)
 	return err == nil
 }
+
+var _ io.Reader
