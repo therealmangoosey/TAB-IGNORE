@@ -4,7 +4,7 @@
 
 ## Current state
 
-The repository contains the main CLI, daemon/RPC layer, SQLite storage, provider system, downloader, local HTTP server, library tools, diagnostics, TUI, tests, and Termux-oriented build structure. CI builds a CGO-free Linux/arm64 binary.
+The repository contains the main CLI, daemon/RPC layer, SQLite storage, provider system, downloader, local HTTP server, LAN UPnP/DLNA media server, library tools, diagnostics, TUI, tests, and Termux-oriented build structure. CI builds a CGO-free Linux/arm64 binary.
 
 ## Termux setup
 
@@ -55,6 +55,46 @@ export HERMIT_TMDB_KEY="your_tmdb_key"
 
 Do not commit API keys or other secrets.
 
+## Smart TV / LAN media server
+
+Hermit now runs a lightweight UPnP/DLNA-style media server alongside the daemon. Compatible Smart TVs and media players can discover **Hermit** on the same LAN, browse the library, and stream files directly from the device.
+
+The media server uses its own HTTP listener so the normal loopback control API does not need to be exposed to the network. The default media-server listener is `0.0.0.0:8789` and SSDP discovery uses the standard `239.255.255.250:1900` multicast group. The media server advertises a `MediaServer:1` device with a ContentDirectory service and provides browsable folders plus direct HTTP video resources with Range support. UPnP MediaServer devices require a ContentDirectory service, and the Browse action is the standard mechanism used to enumerate content. citeturn540975search12turn540975search13
+
+Start Hermit's normal daemon as usual:
+
+```sh
+hmt daemon start
+```
+
+Then open the TV's **Media Server**, **Network**, **DLNA**, or equivalent section. Look for:
+
+```text
+Hermit
+```
+
+The library is browsed from the actual folders under your configured library path. Media files supported by the server are `.mp4`, `.m4v`, `.mkv`, `.webm`, and `.ts`.
+
+The server is enabled by default. Disable it when you do not want LAN discovery:
+
+```sh
+export HERMIT_MEDIA_SERVER=0
+```
+
+Change its name:
+
+```sh
+export HERMIT_MEDIA_SERVER_NAME="My Hermit Server"
+```
+
+Change its HTTP listener if port `8789` is already in use:
+
+```sh
+export HERMIT_MEDIA_SERVER_ADDR="0.0.0.0:8899"
+```
+
+The TV must be on the same local network as the Termux device, and Android/network settings must allow local multicast traffic. Compatibility still depends on the TV's supported DLNA profiles and codecs. Hermit performs direct streaming and does not transcode by default, so a TV that cannot decode a particular file may reject playback.
+
 ## Split-tunnel VPN for downloads
 
 `hmt` can use a WireGuard tunnel without replacing the network route for the rest of the device. Only sockets opened by `hmt`'s HTTP downloader are marked for the dedicated VPN route. Other Android apps and unrelated Termux projects continue using the normal route.
@@ -63,10 +103,7 @@ This mode requires Linux/Android root networking support because per-process soc
 
 ### Free VPN configuration
 
-A free WireGuard configuration can be generated from Proton VPN's account download page. Proton documents that Free-plan users can create a WireGuard `.conf`; the Free plan exposes VPN Accelerator for the manual configuration flow. citeturn625927search0
-
-1. Sign in to your VPN provider and download a WireGuard `.conf`.
-2. Copy it into Termux, for example:
+A free WireGuard configuration can be generated from Proton VPN's account download page. Proton documents that Free-plan users can create a WireGuard `.conf`. 
 
 ```sh
 mkdir -p ~/.hermit
@@ -74,46 +111,29 @@ cp ~/storage/downloads/proton-free.conf ~/.hermit/proton-free.conf
 chmod 600 ~/.hermit/proton-free.conf
 ```
 
-3. On a rooted Android/Termux environment, run:
+On a rooted Android/Termux environment:
 
 ```sh
 su
 export HERMIT_STATE_DIR="$HOME/.hermit"
 hmt vpn up ~/.hermit/proton-free.conf
 hmt vpn status
-```
-
-4. Start the daemon from the same root shell so its download sockets can receive the VPN mark:
-
-```sh
 hmt daemon start
-hmt daemon status
 ```
 
-Or start the VPN and daemon together:
+Or:
 
 ```sh
 hmt vpn start ~/.hermit/proton-free.conf
 ```
 
-5. When finished:
+When finished:
 
 ```sh
 hmt vpn down
 ```
 
-Proton states that its Free plan automatically connects to a fastest free server for the location and that its free servers are distributed across several countries. Actual download speed depends on the selected server, network, and source, so `hmt` does not pretend to guarantee a particular speed. citeturn625927search3turn625927search8
-
-### VPN commands
-
-```text
-hmt vpn up <conf>       enable the split-tunnel WireGuard route
-hmt vpn start <conf>    enable it and run the daemon in the current shell
-hmt vpn status          show tunnel/handshake status
-hmt vpn down            disable the split tunnel
-```
-
-The implementation deliberately avoids changing Android's global default route. The VPN route lives in its own policy-routing table, and `hmt` marks only its own HTTP sockets. That is what keeps unrelated work on the device out of the tunnel.
+Actual VPN speed depends on the selected free server, network conditions, and download source, so Hermit does not promise a particular throughput.
 
 ## Start the daemon
 
@@ -145,7 +165,7 @@ hmt doctor              hardware/runtime diagnostics
 hmt status              daemon and library status
 hmt search <query>      metadata/provider search
 hmt add <url>           queue a download
-hmt get <url>            download a direct/HLS URL
+hmt get <url>           download a direct/HLS URL
 hmt ls                  list jobs
 hmt play <target>       hand media to an Android player
 hmt lib list            list library files
@@ -156,6 +176,9 @@ hmt sources             show provider status
 hmt db vacuum           compact SQLite
 hmt daemon start        start the background daemon
 hmt daemon stop         stop the daemon
+hmt vpn up <conf>       enable split-tunnel WireGuard
+hmt vpn down            disable split-tunnel WireGuard
+hmt vpn status          show VPN status
 ```
 
 Most status/list commands also support `--json` for scripting.
