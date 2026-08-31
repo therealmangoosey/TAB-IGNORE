@@ -11,6 +11,9 @@ import (
 const DefaultMark = 42420
 
 func StatePath() string {
+	if state := os.Getenv("HERMIT_STATE_DIR"); state != "" {
+		return filepath.Join(state, "vpn-state")
+	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".hermit", "vpn-state")
 }
