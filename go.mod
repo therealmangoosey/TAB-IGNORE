@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/BurntSushi/toml v1.4.0
 	github.com/anacrolix/dms v1.7.2
+	github.com/anacrolix/log v0.15.2
 	github.com/charmbracelet/bubbletea v1.2.2
 	github.com/charmbracelet/lipgloss v1.0.0
 	modernc.org/sqlite v1.57.0
@@ -13,7 +14,6 @@ require (
 require (
 	github.com/anacrolix/ffprobe v1.1.0 // indirect
 	github.com/anacrolix/generics v0.0.1 // indirect
-	github.com/anacrolix/log v0.15.2 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/x/ansi v0.4.5 // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
