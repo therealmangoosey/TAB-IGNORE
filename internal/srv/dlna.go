@@ -22,7 +22,6 @@ import (
 )
 
 const dlnaHTTPAddrDefault = "0.0.0.0:8789"
-
 const fallbackIconPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
 
 type dlnaServer struct {
@@ -64,7 +63,6 @@ func (d *dlnaServer) start(ctx context.Context, logf func(string)) {
 		}
 		return
 	}
-
 	ln, err := net.Listen("tcp", d.addr)
 	if err != nil {
 		if logf != nil {
@@ -72,28 +70,24 @@ func (d *dlnaServer) start(ctx context.Context, logf func(string)) {
 		}
 		return
 	}
-
 	logger := analog.NewLogger("hermit", "dlna")
 	logger.SetHandlers(analog.DiscardHandler)
 	iconBytes, _ := base64.StdEncoding.DecodeString(fallbackIconPNGBase64)
 	s := &dms.Server{
-		HTTPConn:            ln,
-		FriendlyName:        d.name,
-		RootObjectPath:      root,
-		NoProbe:             !commandExists("ffprobe"),
-		NoTranscode:         !commandExists("ffmpeg"),
+		HTTPConn: ln,
+		FriendlyName: d.name,
+		RootObjectPath: root,
+		NoProbe: !commandExists("ffprobe"),
+		NoTranscode: !commandExists("ffmpeg"),
 		StallEventSubscribe: true,
-		IgnoreHidden:        true,
-		IgnoreUnreadable:    true,
-		NotifyInterval:      30 * time.Second,
-		AllowedIpNets:       localInterfaceNetworks(),
-		Icons: []dms.Icon{{
-			Width: 1, Height: 1, Depth: 24,
-			Mimetype: "image/png", Bytes: iconBytes,
-		}},
+		IgnoreHidden: true,
+		IgnoreUnreadable: true,
+		NotifyInterval: 30 * time.Second,
+		AllowedIpNets: localInterfaceNetworks(),
+		Icons: []dms.Icon{{Width: 1, Height: 1, Depth: 24, Mimetype: "image/png", Bytes: iconBytes}},
 		OnBrowseDirectChildren: d.browseDirectChildren,
-		OnBrowseMetadata:       d.browseMetadata,
-		Logger:                 logger,
+		OnBrowseMetadata: d.browseMetadata,
+		Logger: logger,
 	}
 	if err := s.Init(); err != nil {
 		_ = ln.Close()
@@ -107,13 +101,9 @@ func (d *dlnaServer) start(ctx context.Context, logf func(string)) {
 	if logf != nil {
 		logf("DLNA media server listening on " + ln.Addr().String() + " as " + d.name)
 	}
-
 	done := make(chan error, 1)
 	go func() { done <- s.Run() }()
-	go func() {
-		<-ctx.Done()
-		_ = s.Close()
-	}()
+	go func() { <-ctx.Done(); _ = s.Close() }()
 	go func() {
 		if err := <-done; err != nil && ctx.Err() == nil && logf != nil {
 			logf("DLNA server stopped: " + err.Error())
@@ -182,6 +172,20 @@ func fallbackLocalNetworks() []*net.IPNet {
 	return []*net.IPNet{ipv4, ipv6}
 }
 
+func mustRoot(root string) string {
+	p, _ := filepath.Abs(root)
+	return p
+}
+
+func hasTraversal(raw string) bool {
+	for _, segment := range strings.Split(filepath.ToSlash(raw), "/") {
+		if segment == ".." {
+			return true
+		}
+	}
+	return false
+}
+
 func (d *dlnaServer) browseRoot() (string, error) {
 	return filepath.Abs(d.library.Root)
 }
@@ -198,14 +202,14 @@ func (d *dlnaServer) browsePath(objectID string) (string, string, error) {
 	if pathID == "" || pathID == "0" || pathID == "/" {
 		return root, "/", nil
 	}
-	for _, segment := range strings.Split(filepath.ToSlash(pathID), "/") {
-		if segment == ".." {
-			return "", "", fmt.Errorf("object path escapes library")
-		}
+	if hasTraversal(pathID) {
+		return "", "", fmt.Errorf("object path escapes library")
 	}
 	pathID = filepath.ToSlash(filepath.Clean("/" + pathID))
-	rel := strings.TrimPrefix(pathID, "/")
-	full := filepath.Join(root, filepath.FromSlash(rel))
+	if pathID == "/" || hasTraversal(pathID) {
+		return "", "", fmt.Errorf("object path escapes library")
+	}
+	full := filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(pathID, "/")))
 	rootAbs, _ := filepath.Abs(root)
 	fullAbs, _ := filepath.Abs(full)
 	if fullAbs != rootAbs && !strings.HasPrefix(fullAbs, rootAbs+string(filepath.Separator)) {
@@ -256,15 +260,10 @@ func isMedia(path string) bool {
 }
 
 func (d *dlnaServer) makeObject(pathID string, info os.FileInfo, host string) (interface{}, error) {
-	obj := upnpav.Object{
-		ID: objectID(pathID), ParentID: parentID(pathID), Restricted: 1,
-		Title: info.Name(),
-		Date: upnpav.Timestamp{Time: info.ModTime()},
-	}
+	obj := upnpav.Object{ID: objectID(pathID), ParentID: parentID(pathID), Restricted: 1, Title: info.Name(), Date: upnpav.Timestamp{Time: info.ModTime()}}
 	if info.IsDir() {
 		count := 0
-		root := mustRoot(d.library.Root)
-		entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(pathID, "/"))))
+		entries, err := os.ReadDir(filepath.Join(mustRoot(d.library.Root), filepath.FromSlash(strings.TrimPrefix(pathID, "/"))))
 		if err == nil {
 			for _, entry := range entries {
 				if strings.HasPrefix(entry.Name(), ".") {
@@ -283,17 +282,11 @@ func (d *dlnaServer) makeObject(pathID string, info os.FileInfo, host string) (i
 	}
 	obj.Class = "object.item.videoItem"
 	resourceURL := (&url.URL{Scheme: "http", Host: host, Path: "/res", RawQuery: url.Values{"path": {pathID}}.Encode()}).String()
-	item := upnpav.Item{Object: obj, Res: []upnpav.Resource{{
+	return upnpav.Item{Object: obj, Res: []upnpav.Resource{{
 		URL: resourceURL,
 		ProtocolInfo: fmt.Sprintf("http-get:*:%s:%s", mediaMIME(info.Name()), dlna.ContentFeatures{SupportRange: true}.String()),
 		Size: uint64(info.Size()),
-	}}}
-	return item, nil
-}
-
-func mustRoot(root string) string {
-	p, _ := filepath.Abs(root)
-	return p
+	}}}, nil
 }
 
 func (d *dlnaServer) browseDirectChildren(objectPath, rootObjectPath, host, _ string) ([]interface{}, error) {
@@ -302,12 +295,10 @@ func (d *dlnaServer) browseDirectChildren(objectPath, rootObjectPath, host, _ st
 		return nil, err
 	}
 	_ = rootObjectPath
-	pathID := filepath.ToSlash(filepath.Clean("/" + objectPath))
-	for _, segment := range strings.Split(pathID, "/") {
-		if segment == ".." {
-			return nil, fmt.Errorf("object path escapes library")
-		}
+	if hasTraversal(objectPath) {
+		return nil, fmt.Errorf("object path escapes library")
 	}
+	pathID := filepath.ToSlash(filepath.Clean("/" + objectPath))
 	full := root
 	if pathID != "/" {
 		full = filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(pathID, "/")))
@@ -357,15 +348,13 @@ func (d *dlnaServer) browseMetadata(objectPath, rootObjectPath, host, _ string) 
 		return nil, err
 	}
 	if pathID == "/" {
-		obj := upnpav.Object{ID: "0", ParentID: "-1", Restricted: 1, Title: d.name, Class: "object.container.storageFolder"}
+		obj := upnpav.Object{ID: "0", ParentID: "-1", Restricted: 1, Title: d.name, Class: "object.container.storageFolder", Date: upnpav.Timestamp{Time: info.ModTime()}}
 		return upnpav.Container{Object: obj, ChildCount: lenOrZero(d.browseChildCount(full))}, nil
 	}
 	return d.makeObject(pathID, info, host)
 }
 
-func (d *dlnaServer) browseChildCount(path string) ([]os.DirEntry, error) {
-	return os.ReadDir(path)
-}
+func (d *dlnaServer) browseChildCount(path string) ([]os.DirEntry, error) { return os.ReadDir(path) }
 
 func lenOrZero(entries []os.DirEntry, err error) int {
 	if err != nil {
