@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/therealmangoosey/TAB-IGNORE/internal/config"
 	"github.com/therealmangoosey/TAB-IGNORE/internal/disk"
 	"github.com/therealmangoosey/TAB-IGNORE/internal/scrub"
 )
@@ -107,16 +108,17 @@ func (l *Library) Reclaim(ctx context.Context, watchFunc func(path string) bool,
 	if err != nil {
 		return 0, 0, err
 	}
+	reserve, _ := config.ParseSize(l.Reserve)
 	var deleted, bytes int
 	// Reclaim from the end of the sorted list (lexicographically oldest show
 	// first is not a perfect "oldest watched" heuristic, but it is deterministic
 	// and safe without a metadata DB).
 	for _, e := range entries {
-		stats, err := disk.Info(l.Root)
+		stats, err := disk.Info(l.Root, reserve)
 		if err != nil {
 			return deleted, int64(bytes), err
 		}
-		if stats.FreeBytes >= keepBytes {
+		if stats.SpareBytes() >= keepBytes {
 			break
 		}
 		if watchFunc != nil && !watchFunc(e.Path) {
@@ -131,8 +133,9 @@ func (l *Library) Reclaim(ctx context.Context, watchFunc func(path string) bool,
 	return deleted, int64(bytes), nil
 }
 
-// Secure writes .nomedia into every show directory and removes any that do not
-// belong to the library. It returns the number of directories marked.
+// Secure writes .nomedia into every non-hidden top-level show directory.
+// It does not remove untracked directories. It returns the number of
+// directories marked.
 func (l *Library) Secure() (int, error) {
 	if err := os.MkdirAll(l.Root, 0o755); err != nil {
 		return 0, err
