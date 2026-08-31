@@ -77,7 +77,6 @@ func (d *dlnaServer) start(ctx context.Context, logf func(string)) {
 		HTTPConn: ln,
 		FriendlyName: d.name,
 		RootObjectPath: root,
-		FS: os.DirFS(root),
 		NoProbe: !commandExists("ffprobe"),
 		NoTranscode: !commandExists("ffmpeg"),
 		StallEventSubscribe: true,
