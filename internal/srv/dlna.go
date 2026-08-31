@@ -122,7 +122,11 @@ func (d *dlnaServer) browse(ctx context.Context, objectID, flag string, start, r
 		if err != nil {
 			continue
 		}
-		entries = append(entries, didlObject{ID: url.PathEscape(filepath.ToSlash(rel)), Parent: objectID, Title: e.Name(), Size: fileSize(full)})
+		modTime := time.Now()
+		if info, statErr := e.Info(); statErr == nil && !info.ModTime().IsZero() {
+			modTime = info.ModTime()
+		}
+		entries = append(entries, didlObject{ID: url.PathEscape(filepath.ToSlash(rel)), Parent: objectID, Title: e.Name(), Size: fileSize(full), ModTime: modTime})
 	}
 	sort.Slice(entries, func(i, j int) bool { return strings.ToLower(entries[i].Title) < strings.ToLower(entries[j].Title) })
 	if flag == "BrowseMetadata" {
@@ -272,6 +276,7 @@ func httpXML(w http.ResponseWriter, body string) {
 type didlObject struct {
 	ID, Parent, Title string
 	Size              int64
+	ModTime           time.Time
 	Container         bool
 }
 
@@ -279,7 +284,7 @@ func (x didlObject) toDIDL(base string) string {
 	if x.Container {
 		return didlContainer(x.Title, x.ID, x.Parent)
 	}
-	return fmt.Sprintf(`<item id="%s" parentID="%s" restricted="1"><dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">%s</dc:title><upnp:class xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">object.item.videoItem</upnp:class><res protocolInfo="http-get:*:%s:*" size="%d">%s/media/%s</res></item>`, html.EscapeString(x.ID), html.EscapeString(x.Parent), html.EscapeString(x.Title), mimeType(x.Title), x.Size, strings.TrimRight(base, "/"), x.ID)
+	return fmt.Sprintf(`<item id="%s" parentID="%s" restricted="1"><dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">%s</dc:title><dc:date xmlns:dc="http://purl.org/dc/elements/1.1/">%s</dc:date><upnp:class xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">object.item.videoItem</upnp:class><res protocolInfo="http-get:*:%s:DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000" size="%d">%s/media/%s</res></item>`, html.EscapeString(x.ID), html.EscapeString(x.Parent), html.EscapeString(x.Title), x.ModTime.UTC().Format(time.RFC3339), mimeType(x.Title), x.Size, strings.TrimRight(base, "/"), x.ID)
 }
 func didlContainer(title, id, parent string) string {
 	return fmt.Sprintf(`<container id="%s" parentID="%s" restricted="1"><dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">%s</dc:title><upnp:class xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">object.container.storageFolder</upnp:class></container>`, html.EscapeString(id), html.EscapeString(parent), html.EscapeString(title))
