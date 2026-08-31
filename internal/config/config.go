@@ -37,6 +37,7 @@ type PowerConfig struct {
 	MaxBytesPerSec  string `toml:"max_bytes_per_sec"`
 	NiceRemux       int    `toml:"nice_remux"`
 	PauseWhenThermal string `toml:"pause_when_thermal"`
+	MaxAttempts     int    `toml:"max_attempts"`
 }
 
 // DiskConfig controls storage headroom.
@@ -87,7 +88,7 @@ type Config struct {
 	Disk       DiskConfig             `toml:"disk"`
 	Library    LibraryConfig          `toml:"library"`
 	Meta       MetaConfig             `toml:"meta"`
-	Server     ServerConfig           `toml:"server"`
+	Server     ServerConfig            `toml:"server"`
 	TUI        TUIConfig              `toml:"tui"`
 	Extra      map[string]any         `toml:"extra"`
 }
@@ -129,6 +130,7 @@ func Default() Config {
 			MaxBytesPerSec:      "4MiB",
 			NiceRemux:           10,
 			PauseWhenThermal:    "moderate",
+			MaxAttempts:         3,
 		},
 		Disk: DiskConfig{
 			Reserve:         "3GB",
