@@ -30,7 +30,7 @@ func main() {
 		return
 	}
 	if os.Args[1] == "doctor" {
-		os.Exit(doctor(ctx, cfg, os.Args[2:]))
+		os.Exit(runDoctor(ctx, cfg, os.Args[2:]))
 	}
 	if os.Args[1] == "version" {
 		fmt.Println("hermit", version())
