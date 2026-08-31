@@ -33,10 +33,7 @@ func parseTime(s string) time.Time {
 
 // SaveMedia inserts or updates a media row and returns its stable ID.
 func (d *DB) SaveMedia(ctx context.Context, m hermit.Media) (int64, error) {
-	ttl := float64(24 * 3600)
-	if !m.MetaFetchedAt.IsZero() {
-		ttl = 24 * 3600
-	}
+	const ttl = float64(24 * 3600)
 	var id int64
 	err := d.conn.QueryRowContext(ctx,
 		`INSERT INTO media(kind, tmdb_id, imdb_id, anilist_id, slug, title, original_title, poster_path, backdrop_path, overview, first_air, runtime_min, season_count, episode_count, year, raw, meta_fetched_at, meta_ttl)
@@ -81,7 +78,7 @@ func (d *DB) GetMediaByTMDB(ctx context.Context, tmdb int, kind hermit.Kind) (he
 	var idStr, anilist sql.NullString
 	var fetched string
 	err := d.conn.QueryRowContext(ctx,
-		`SELECT id, kind, tmdb_id, imdb_id, anilist_id, slug, title, original_title, poster_path, backdrop_path, overview, first_air, runtime_min, season_count, episode_count, year, raw, meta_fetched_at FROM media WHERE tmdb_id=? AND (kind=? OR kind='movie' OR kind='tv') LIMIT 1`,
+		`SELECT id, kind, tmdb_id, imdb_id, anilist_id, slug, title, original_title, poster_path, backdrop_path, overview, first_air, runtime_min, season_count, episode_count, year, raw, meta_fetched_at FROM media WHERE tmdb_id=? AND kind=? LIMIT 1`,
 		tmdb, kind,
 	).Scan(&m.ID, &m.Kind, &m.TMDBID, &idStr, &anilist, &m.Slug, &m.Title, &m.OriginalTitle, &m.PosterPath, &m.BackdropPath,
 		&m.Overview, &m.FirstAir, &m.RuntimeMin, &m.SeasonCount, &m.EpisodeCount, &m.Year, &m.Raw, &fetched)
@@ -289,6 +286,10 @@ func (d *DB) ListJobs(ctx context.Context, states []string, limit int) ([]hermit
 			args = append(args, s)
 		}
 		where = " WHERE state IN (" + strings.Join(ph, ",") + ")"
+		if len(states) == 1 && states[0] == string(hermit.JobQueued) {
+			where += " AND (next_retry_at='' OR next_retry_at<=?)"
+			args = append(args, formatTime(time.Now()))
+		}
 	}
 	args = append(args, limit)
 	rows, err := d.conn.QueryContext(ctx,
