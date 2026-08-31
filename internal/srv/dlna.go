@@ -241,18 +241,21 @@ func parentID(pathID string) string {
 }
 
 func mediaMIME(path string) string {
-	m := mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))
-	if m != "" {
-		return m
-	}
-	switch strings.ToLower(filepath.Ext(path)) {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".mp4", ".m4v":
+		return "video/mp4"
+	case ".webm":
+		return "video/webm"
 	case ".mkv":
 		return "video/x-matroska"
 	case ".ts":
 		return "video/mp2t"
-	default:
-		return "application/octet-stream"
 	}
+	if m := mime.TypeByExtension(ext); m != "" {
+		return m
+	}
+	return "application/octet-stream"
 }
 
 func isMedia(path string) bool {
