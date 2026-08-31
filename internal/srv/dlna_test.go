@@ -6,9 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/therealmangoosey/TAB-IGNORE/internal/lib"
-	"github.com/therealmangoosey/TAB-IGNORE/pkg/hermit"
 	"github.com/anacrolix/dms/upnpav"
+	"github.com/therealmangoosey/TAB-IGNORE/internal/lib"
 )
 
 func TestDLNAMakeObjectUsesFileDateAndSize(t *testing.T) {
@@ -56,5 +55,3 @@ func TestDLNABrowsePathRejectsEscape(t *testing.T) {
 		t.Fatal("expected path traversal to be rejected")
 	}
 }
-
-var _ hermit.Source
