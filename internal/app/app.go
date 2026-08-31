@@ -224,56 +224,42 @@ func EnsureStorage(cfg config.Config) error {
 	return nil
 }
 
-func commandExists(name string) bool {
+// ISRunning reports whether a daemon socket is live.
+func ISRunning(socket string) bool {
+	conn, err := net.Dial("unix", socket)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
+// OpenFileForExternal opens a local file with the platform player.
+func OpenFileForExternal(ctx context.Context, path string) error {
+	return play.Open(ctx, "file://"+path, "video/*")
+}
+
+// CommandAvailable is used by doctor.
+func CommandAvailable(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
 }
 
-func isTermux() bool {
-	if os.Getenv("PREFIX") != "" {
-		return true
-	}
-	home := os.Getenv("HOME")
-	return strings.Contains(home, "com.termux")
+// Platform is the runtime OS string.
+func Platform() string { return runtime.GOOS }
+
+// ScrubFile normalizes a file label; retained as a tiny wrapper for callers.
+func ScrubFile(name string) string {
+	return scrub.SafeName(name)
 }
 
-func localIPs() []net.IP {
-	var out []net.IP
-	interfaces, err := net.Interfaces()
-	if err != nil {
-		return out
+// ClearStaleSocket removes a dead socket.
+func ClearStaleSocket(socket string) error {
+	if _, err := os.Stat(socket); err != nil {
+		return nil
 	}
-	for _, iface := range interfaces {
-		if iface.Flags&net.FlagUp == 0 {
-			continue
-		}
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-		for _, addr := range addrs {
-			var ip net.IP
-			switch v := addr.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			}
-			if ip != nil {
-				out = append(out, ip)
-			}
-		}
+	if ISRunning(socket) {
+		return errors.New("socket is already in use")
 	}
-	return out
+	return os.Remove(socket)
 }
-
-func runtimeSummary() string {
-	return fmt.Sprintf("%s/%s %s", runtime.GOOS, runtime.GOARCH, runtime.Version())
-}
-
-var _ = errors.Is
-var _ = commandExists
-var _ = isTermux
-var _ = localIPs
-var _ = runtimeSummary
-var _ = scrub.SafeName
