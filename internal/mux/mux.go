@@ -5,6 +5,7 @@ package mux
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"os/exec"
@@ -54,14 +55,33 @@ func boxPositions(path string) (int64, int64, error) {
 		return -1, -1, err
 	}
 	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return -1, -1, err
+	}
+	fileSize := info.Size()
 	var offset, moovPos, mdatPos int64 = 0, -1, -1
-	for {
+	for offset < fileSize {
 		hdr := make([]byte, 8)
 		if _, err := f.ReadAt(hdr, offset); err != nil {
 			return moovPos, mdatPos, nil
 		}
-		size := int64(uint32(hdr[0])<<24 | uint32(hdr[1])<<16 | uint32(hdr[2])<<8 | uint32(hdr[3]))
-		if size < 8 {
+		size := int64(binary.BigEndian.Uint32(hdr[:4]))
+		headerSize := int64(8)
+		if size == 1 {
+			ext := make([]byte, 8)
+			if _, err := f.ReadAt(ext, offset+8); err != nil {
+				return moovPos, mdatPos, nil
+			}
+			size = int64(binary.BigEndian.Uint64(ext))
+			headerSize = 16
+			if size < headerSize {
+				return moovPos, mdatPos, nil
+			}
+		} else if size == 0 {
+			size = fileSize - offset
+		}
+		if size < headerSize || size > fileSize-offset {
 			return moovPos, mdatPos, nil
 		}
 		name := string(hdr[4:8])
@@ -75,10 +95,8 @@ func boxPositions(path string) (int64, int64, error) {
 			return moovPos, mdatPos, nil
 		}
 		offset += size
-		if offset > int64(200<<20) {
-			return moovPos, mdatPos, nil
-		}
 	}
+	return moovPos, mdatPos, nil
 }
 
 // Remux copies the input into the output, adds faststart, and scrubs global
