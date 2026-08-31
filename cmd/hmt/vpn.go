@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/therealmangoosey/TAB-IGNORE/internal/config"
 	"github.com/therealmangoosey/TAB-IGNORE/internal/vpn"
 )
 
-func cmdVPN(ctx context.Context, args []string) error {
+func cmdVPN(ctx context.Context, cfg config.Config, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: hmt vpn up <wireguard.conf> | hmt vpn down | hmt vpn status")
+		return errors.New("usage: hmt vpn up <wireguard.conf> | hmt vpn down | hmt vpn status | hmt vpn start <wireguard.conf>")
 	}
 
 	switch args[0] {
@@ -22,13 +23,13 @@ func cmdVPN(ctx context.Context, args []string) error {
 		if err := vpn.Up(args[1]); err != nil {
 			return err
 		}
-		fmt.Printf("VPN on: hmt traffic is split-routed through %s\n", "hmtvpn")
+		fmt.Println("VPN on: hmt network sockets are now split-routed through WireGuard")
 		return nil
 	case "down":
 		if err := vpn.Down(); err != nil {
 			return err
 		}
-		fmt.Println("VPN off: normal routing restored")
+		fmt.Println("VPN off: hmt uses the normal network route")
 		return nil
 	case "status":
 		status, err := vpn.Status()
@@ -47,7 +48,7 @@ func cmdVPN(ctx context.Context, args []string) error {
 		if err := vpn.Up(args[1]); err != nil {
 			return err
 		}
-		return daemonRun(ctx, loadedConfig(), nil)
+		return daemonRun(ctx, cfg, nil)
 	default:
 		return fmt.Errorf("unknown vpn command %q; use up, down, start, or status", args[0])
 	}
