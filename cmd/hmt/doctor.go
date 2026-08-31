@@ -6,12 +6,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/therealmangoosey/TAB-IGNORE/internal/app"
 	"github.com/therealmangoosey/TAB-IGNORE/internal/config"
-	"github.com/therealmangoosey/TAB-IGNORE/internal/doctor"
+	doctorpkg "github.com/therealmangoosey/TAB-IGNORE/internal/doctor"
 )
 
-func doctor(ctx context.Context, cfg config.Config, args []string) int {
+func runDoctor(ctx context.Context, cfg config.Config, args []string) int {
 	a, err := newApp(cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "doctor:", err)
@@ -30,7 +29,6 @@ func doctor(ctx context.Context, cfg config.Config, args []string) int {
 		}
 		return 0
 	}
-	// Probe URLs for health.
 	for i := range st.Providers {
 		hp := &st.Providers[i]
 		if hp.Base == "" {
@@ -39,8 +37,9 @@ func doctor(ctx context.Context, cfg config.Config, args []string) int {
 		}
 		fmt.Printf("%s: %s\n", hp.ID, hp.Base)
 	}
-	fmt.Print(doctor.FormatText(st))
-	if strings.TrimSpace(doctor.FormatText(st)) == "" {
+	formatted := doctorpkg.FormatText(st)
+	fmt.Print(formatted)
+	if strings.TrimSpace(formatted) == "" {
 		fmt.Println("doctor: no diagnostics available")
 	}
 	return 0
