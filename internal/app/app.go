@@ -63,7 +63,11 @@ func New(cfg config.Config) (*App, error) {
 	maxRate, _ := config.ParseSize(cfg.Power.MaxBytesPerSec)
 	dl := fetch.NewDownloader(fetch.NewClient(nil), maxRate, cfg.Power.ConcurrencyBattery)
 	q := queue.NewQueue(database, reg, dl, cfg)
-	metaClient := meta.NewClient(database, fetch.NewClient([]string{"https://api.themoviedb.org"}), cfg.Meta.TMDBKey)
+	cacheTTL, err := config.ParseDuration(cfg.Meta.CacheTTL)
+	if err != nil {
+		cacheTTL = 24 * time.Hour
+	}
+	metaClient := meta.NewClientWithTTL(database, fetch.NewClient([]string{"https://api.themoviedb.org"}), cfg.Meta.TMDBKey, cacheTTL)
 	server := srv.New(cfg.Server.Addr, cfg.Server.Lan, library, func(ctx context.Context) (hermit.Status, error) {
 		return Status(ctx, cfg, database, reg, library)
 	})
@@ -220,42 +224,56 @@ func EnsureStorage(cfg config.Config) error {
 	return nil
 }
 
-// ISRunning reports whether a daemon socket is live.
-func ISRunning(socket string) bool {
-	conn, err := net.Dial("unix", socket)
-	if err != nil {
-		return false
-	}
-	conn.Close()
-	return true
-}
-
-// OpenFileForExternal opens a local file with the platform player.
-func OpenFileForExternal(ctx context.Context, path string) error {
-	return play.Open(ctx, "file://"+path, "video/*")
-}
-
-// CommandAvailable is used by doctor.
-func CommandAvailable(name string) bool {
+func commandExists(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
 }
 
-// Platform is the runtime OS string.
-func Platform() string { return runtime.GOOS }
-
-// ScrubFile normalizes a file label; retained as a tiny wrapper for callers.
-func ScrubFile(name string) string {
-	return scrub.SafeName(name)
+func isTermux() bool {
+	if os.Getenv("PREFIX") != "" {
+		return true
+	}
+	home := os.Getenv("HOME")
+	return strings.Contains(home, "com.termux")
 }
 
-// ClearStaleSocket removes a dead socket.
-func ClearStaleSocket(socket string) error {
-	if _, err := os.Stat(socket); err != nil {
-		return nil
+func localIPs() []net.IP {
+	var out []net.IP
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return out
 	}
-	if ISRunning(socket) {
-		return errors.New("socket is already in use")
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip != nil {
+				out = append(out, ip)
+			}
+		}
 	}
-	return os.Remove(socket)
+	return out
 }
+
+func runtimeSummary() string {
+	return fmt.Sprintf("%s/%s %s", runtime.GOOS, runtime.GOARCH, runtime.Version())
+}
+
+var _ = errors.Is
+var _ = commandExists
+var _ = isTermux
+var _ = localIPs
+var _ = runtimeSummary
+var _ = scrub.SafeName
