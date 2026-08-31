@@ -39,7 +39,7 @@ func TestLocalFSSearch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hits, err := prov.Search(context.Background(), "severance", 0)
+	hits, err := prov.Search(context.Background(), "severance", hermit.KindTV)
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
