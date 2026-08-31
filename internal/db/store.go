@@ -254,16 +254,21 @@ func (d *DB) UpdateJob(ctx context.Context, j hermit.Job) error {
 func (d *DB) GetJob(ctx context.Context, id int64) (hermit.Job, error) {
 	var j hermit.Job
 	var src string
+	var createdAt, startedAt, finishedAt, nextRetryAt string
 	err := d.conn.QueryRowContext(ctx,
 		`SELECT id, COALESCE(episode_id,0), COALESCE(media_id,0), season, episode, provider, source_json, quality, codec, state,
 		        priority, bytes_total, bytes_done, parts_total, parts_done, attempts, last_error, err_kind, sha256,
 		        target_path, tmp_path, created_at, started_at, finished_at, next_retry_at FROM job WHERE id=?`,
 		id).Scan(&j.ID, &j.EpisodeID, &j.MediaID, &j.Season, &j.Episode, &j.Provider, &src, &j.Quality, &j.Codec,
 		&j.State, &j.Priority, &j.BytesTotal, &j.BytesDone, &j.PartsTotal, &j.PartsDone, &j.Attempts, &j.LastError,
-		&j.ErrKind, &j.SHA256, &j.TargetPath, &j.TmpPath, &j.CreatedAt, &j.StartedAt, &j.FinishedAt, &j.NextRetryAt)
+		&j.ErrKind, &j.SHA256, &j.TargetPath, &j.TmpPath, &createdAt, &startedAt, &finishedAt, &nextRetryAt)
 	if err != nil {
 		return j, err
 	}
+	j.CreatedAt = parseTime(createdAt)
+	j.StartedAt = parseTime(startedAt)
+	j.FinishedAt = parseTime(finishedAt)
+	j.NextRetryAt = parseTime(nextRetryAt)
 	if err := json.Unmarshal([]byte(src), &j.Source); err != nil {
 		j.Source = hermit.Source{}
 	}
@@ -299,12 +304,17 @@ func (d *DB) ListJobs(ctx context.Context, states []string, limit int) ([]hermit
 	for rows.Next() {
 		var j hermit.Job
 		var src string
+		var createdAt, startedAt, finishedAt, nextRetryAt string
 		if err := rows.Scan(&j.ID, &j.EpisodeID, &j.MediaID, &j.Season, &j.Episode, &j.Provider, &src, &j.Quality,
 			&j.Codec, &j.State, &j.Priority, &j.BytesTotal, &j.BytesDone, &j.PartsTotal, &j.PartsDone, &j.Attempts,
-			&j.LastError, &j.ErrKind, &j.SHA256, &j.TargetPath, &j.TmpPath, &j.CreatedAt, &j.StartedAt, &j.FinishedAt,
-			&j.NextRetryAt); err != nil {
+			&j.LastError, &j.ErrKind, &j.SHA256, &j.TargetPath, &j.TmpPath, &createdAt, &startedAt, &finishedAt,
+			&nextRetryAt); err != nil {
 			return nil, err
 		}
+		j.CreatedAt = parseTime(createdAt)
+		j.StartedAt = parseTime(startedAt)
+		j.FinishedAt = parseTime(finishedAt)
+		j.NextRetryAt = parseTime(nextRetryAt)
 		_ = json.Unmarshal([]byte(src), &j.Source)
 		out = append(out, j)
 	}
@@ -361,9 +371,11 @@ func (d *DB) SavePlayback(ctx context.Context, p hermit.Playback) error {
 func (d *DB) GetPlayback(ctx context.Context, episodeID int64) (hermit.Playback, error) {
 	var p hermit.Playback
 	var completed int
+	var updatedAt string
 	err := d.conn.QueryRowContext(ctx,
 		`SELECT episode_id, position_s, duration_s, completed, updated_at, source FROM playback WHERE episode_id=?`, episodeID).
-		Scan(&p.EpisodeID, &p.PositionS, &p.DurationS, &completed, &p.UpdatedAt, &p.Source)
+		Scan(&p.EpisodeID, &p.PositionS, &p.DurationS, &completed, &updatedAt, &p.Source)
+	p.UpdatedAt = parseTime(updatedAt)
 	p.Completed = completed != 0
 	return p, err
 }

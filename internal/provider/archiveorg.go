@@ -152,7 +152,6 @@ func (a *ArchiveOrg) Resolve(ctx context.Context, ref hermit.Ref) ([]hermit.Sour
 		}
 		if f.Source == "original" || strings.HasSuffix(strings.ToLower(f.Name), ".mp4") || strings.HasSuffix(strings.ToLower(f.Name), ".mkv") {
 			var size int64
-			_ = f.Size.Int64()
 			if n, err := f.Size.Int64(); err == nil {
 				size = n
 			}
