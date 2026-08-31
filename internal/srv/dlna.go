@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
 
 	dms "github.com/anacrolix/dms/dlna/dms"
@@ -87,5 +86,6 @@ func (d *dlnaServer) start(ctx context.Context, logf func(string)) {
 }
 
 func commandExists(name string) bool {
-	return strings.TrimSpace(name) != "" && exec.Command(name, "-version").Run() == nil
+	_, err := exec.LookPath(name)
+	return err == nil
 }
