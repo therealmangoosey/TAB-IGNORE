@@ -55,7 +55,67 @@ export HERMIT_TMDB_KEY="your_tmdb_key"
 
 Do not commit API keys or other secrets.
 
-### 5. Start the daemon
+## Split-tunnel VPN for downloads
+
+`hmt` can use a WireGuard tunnel without replacing the network route for the rest of the device. Only sockets opened by `hmt`'s HTTP downloader are marked for the dedicated VPN route. Other Android apps and unrelated Termux projects continue using the normal route.
+
+This mode requires Linux/Android root networking support because per-process socket marking uses `SO_MARK` and policy routing. Without root or `CAP_NET_ADMIN`, the VPN commands refuse to start rather than silently sending downloads outside the tunnel.
+
+### Free VPN configuration
+
+A free WireGuard configuration can be generated from Proton VPN's account download page. Proton documents that Free-plan users can create a WireGuard `.conf`; the Free plan exposes VPN Accelerator for the manual configuration flow. citeturn625927search0
+
+1. Sign in to your VPN provider and download a WireGuard `.conf`.
+2. Copy it into Termux, for example:
+
+```sh
+mkdir -p ~/.hermit
+cp ~/storage/downloads/proton-free.conf ~/.hermit/proton-free.conf
+chmod 600 ~/.hermit/proton-free.conf
+```
+
+3. On a rooted Android/Termux environment, run:
+
+```sh
+su
+export HERMIT_STATE_DIR="$HOME/.hermit"
+hmt vpn up ~/.hermit/proton-free.conf
+hmt vpn status
+```
+
+4. Start the daemon from the same root shell so its download sockets can receive the VPN mark:
+
+```sh
+hmt daemon start
+hmt daemon status
+```
+
+Or start the VPN and daemon together:
+
+```sh
+hmt vpn start ~/.hermit/proton-free.conf
+```
+
+5. When finished:
+
+```sh
+hmt vpn down
+```
+
+Proton states that its Free plan automatically connects to a fastest free server for the location and that its free servers are distributed across several countries. Actual download speed depends on the selected server, network, and source, so `hmt` does not pretend to guarantee a particular speed. citeturn625927search3turn625927search8
+
+### VPN commands
+
+```text
+hmt vpn up <conf>       enable the split-tunnel WireGuard route
+hmt vpn start <conf>    enable it and run the daemon in the current shell
+hmt vpn status          show tunnel/handshake status
+hmt vpn down            disable the split tunnel
+```
+
+The implementation deliberately avoids changing Android's global default route. The VPN route lives in its own policy-routing table, and `hmt` marks only its own HTTP sockets. That is what keeps unrelated work on the device out of the tunnel.
+
+## Start the daemon
 
 ```sh
 hmt daemon start
@@ -85,7 +145,7 @@ hmt doctor              hardware/runtime diagnostics
 hmt status              daemon and library status
 hmt search <query>      metadata/provider search
 hmt add <url>           queue a download
-hmt get <url>           download a direct/HLS URL
+hmt get <url>            download a direct/HLS URL
 hmt ls                  list jobs
 hmt play <target>       hand media to an Android player
 hmt lib list            list library files
