@@ -88,9 +88,10 @@ func (p *Playlist) ChooseVariant() (Variant, error) {
 	if len(p.Variants) == 0 {
 		return Variant{}, fmt.Errorf("playlist has no variants")
 	}
-	eligible := p.Variants[:0]
+	eligible := make([]Variant, 0, len(p.Variants))
 	for _, v := range p.Variants {
-		if !strings.Contains(strings.ToLower(v.Codec), "av01") && !strings.Contains(strings.ToLower(v.Codec), "av1") {
+		codec := strings.ToLower(v.Codec)
+		if !strings.Contains(codec, "av01") && !strings.Contains(codec, "av1") {
 			eligible = append(eligible, v)
 		}
 	}
