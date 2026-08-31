@@ -29,9 +29,9 @@ func Probe(ctx context.Context, cfg config.Config, reg *provider.Registry, dbPat
 	status.ServerAddr = cfg.Server.Addr
 
 	reserve, _ := config.ParseSize(cfg.Disk.Reserve)
-	if stats, err := disk.Info(cfg.Library.Path); err == nil {
+	if stats, err := disk.Info(cfg.Library.Path, reserve); err == nil {
 		status.FreeBytes = stats.FreeBytes
-		status.ReserveBytes = reserve
+		status.ReserveBytes = stats.ReserveBytes
 		status.SpareBytes = stats.SpareBytes()
 	}
 
