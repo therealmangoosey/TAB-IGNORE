@@ -35,8 +35,8 @@ func (t *AllowListTransport) allow(origin string) bool {
 	if t.AllowAll {
 		return true
 	}
-	for _, a := range t.Allowed {
-		if strings.EqualFold(strings.TrimRight(a, "/"), strings.TrimRight(origin, "/")) {
+	for allowed := range t.Allowed {
+		if strings.EqualFold(strings.TrimRight(allowed, "/"), strings.TrimRight(origin, "/")) {
 			return true
 		}
 	}
@@ -110,6 +110,9 @@ func (b *BoundedRate) Wait(n int64) {
 	if b.tokens < float64(n) {
 		need := (float64(n) - b.tokens) / float64(b.maxBytes)
 		time.Sleep(time.Duration(need * float64(time.Second)))
+		b.last = time.Now()
+		b.tokens = 0
+		return
 	}
 	b.tokens -= float64(n)
 }
