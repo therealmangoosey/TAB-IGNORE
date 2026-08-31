@@ -79,3 +79,18 @@ func TestDownloadHLS(t *testing.T) {
 		t.Fatalf("bytes: %d", res.Bytes)
 	}
 }
+
+func TestFetchRangeRejects200(t *testing.T) {
+	payload := []byte("0123456789")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+
+	dl := NewDownloader(server.Client(), 1<<20, 1)
+	path := filepath.Join(t.TempDir(), "part")
+	if _, err := dl.fetchRangeToFile(context.Background(), hermit.Source{URL: server.URL}, 3, 6, path, true); err == nil {
+		t.Fatal("expected a server that ignores Range to be rejected")
+	}
+}
