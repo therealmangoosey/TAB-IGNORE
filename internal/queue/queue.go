@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/therealmangoosey/TAB-IGNORE/internal/config"
-	"github.com/therealmangoosey/TAB-IGNORE/internal/disk"
+	"github.com/therealmangoey/TAB-IGNORE/internal/disk"
 	"github.com/therealmangoosey/TAB-IGNORE/internal/db"
 	"github.com/therealmangoosey/TAB-IGNORE/internal/fetch"
 	"github.com/therealmangoosey/TAB-IGNORE/internal/mux"
@@ -25,10 +25,10 @@ type Queue struct {
 	Fetcher  *fetch.Downloader
 	Cfg      config.Config
 
-	mu          sync.Mutex
-	running     map[int64]bool
-	batteryPct  int
-	charging    bool
+	mu         sync.Mutex
+	running    map[int64]bool
+	batteryPct int
+	charging   bool
 }
 
 func NewQueue(database *db.DB, reg *provider.Registry, dl *fetch.Downloader, cfg config.Config) *Queue {
@@ -122,7 +122,10 @@ func (q *Queue) runJob(ctx context.Context, job hermit.Job) {
 	margin, _ := config.ParseSize(q.Cfg.Disk.Margin)
 	job.State = hermit.JobDownloading
 	job.StartedAt = time.Now()
-	_ = q.DB.UpdateJob(ctx, job)
+	if err := q.DB.UpdateJob(ctx, job); err != nil {
+		q.failJob(ctx, job, "database", err.Error())
+		return
+	}
 
 	if job.Source.URL == "" {
 		show := q.showTitle(ctx, job)
@@ -148,7 +151,10 @@ func (q *Queue) runJob(ctx context.Context, job hermit.Job) {
 	}
 	tmpPath := filepath.Join(tmpDir, "download.part")
 	job.TmpPath = tmpPath
-	_ = q.DB.UpdateJob(ctx, job)
+	if err := q.DB.UpdateJob(ctx, job); err != nil {
+		q.failJob(ctx, job, "database", err.Error())
+		return
+	}
 
 	res, err := q.Fetcher.Download(ctx, job.Source, tmpPath)
 	if err != nil {
@@ -172,9 +178,15 @@ func (q *Queue) runJob(ctx context.Context, job hermit.Job) {
 	job.PartsDone = res.Parts
 
 	if q.Cfg.Power.DeferRemuxToCharge {
+		if err := renameAtomic(tmpPath, target); err != nil {
+			q.failJob(ctx, job, "storage_perm_lost", err.Error())
+			return
+		}
+		if err := scrub.WriteSidecar(target, job.MediaID, job.SHA256); err != nil {
+			q.failJob(ctx, job, "storage_metadata", err.Error())
+			return
+		}
 		job.State = hermit.JobDone
-		_ = q.DB.UpdateJob(ctx, job)
-		_ = renameAtomic(tmpPath, target)
 		q.finishJob(ctx, job)
 		return
 	}
@@ -182,13 +194,22 @@ func (q *Queue) runJob(ctx context.Context, job hermit.Job) {
 	remuxed := false
 	if mux.Available() {
 		job.State = hermit.JobRemuxing
-		_ = q.DB.UpdateJob(ctx, job)
+		if err := q.DB.UpdateJob(ctx, job); err != nil {
+			q.failJob(ctx, job, "database", err.Error())
+			return
+		}
 		tmp2 := target + ".tmp"
-		r, err := mux.Remux(tmpPath, tmp2, scrub.Line(show, job.Season, job.Episode, epTitle), scrub.SafeName(show), "", "", true)
-		if err == nil && r {
+		r, remuxErr := mux.Remux(tmpPath, tmp2, scrub.Line(show, job.Season, job.Episode, epTitle), scrub.SafeName(show), "", "", true)
+		if remuxErr == nil && r {
+			if err := renameAtomic(tmp2, target); err != nil {
+				_ = os.Remove(tmp2)
+				q.failJob(ctx, job, "storage_perm_lost", err.Error())
+				return
+			}
 			remuxed = true
 			_ = os.Remove(tmpPath)
-			_ = renameAtomic(tmp2, target)
+		} else {
+			_ = os.Remove(tmp2)
 		}
 	}
 	if !remuxed {
@@ -198,8 +219,15 @@ func (q *Queue) runJob(ctx context.Context, job hermit.Job) {
 		}
 	}
 	job.State = hermit.JobDone
-	_ = q.DB.UpdateJob(ctx, job)
-	_ = scrub.WriteSidecar(target, job.MediaID, job.SHA256)
+	if err := q.DB.UpdateJob(ctx, job); err != nil {
+		return
+	}
+	if err := scrub.WriteSidecar(target, job.MediaID, job.SHA256); err != nil {
+		job.LastError = err.Error()
+		job.ErrKind = "storage_metadata"
+		_ = q.DB.UpdateJob(ctx, job)
+		return
+	}
 	q.finishJob(ctx, job)
 }
 
