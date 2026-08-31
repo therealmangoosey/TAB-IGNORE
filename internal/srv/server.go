@@ -1,6 +1,6 @@
 // Package srv serves the local library over HTTP with standard Range support
-// and exposes a small /api surface for automation. It binds to loopback by
-// default and requires a token for --lan mode.
+// and exposes a small /api surface for automation. It also exposes an optional
+// LAN UPnP/DLNA MediaServer for compatible Smart TVs and players.
 package srv
 
 import (
@@ -20,21 +20,28 @@ import (
 	"github.com/therealmangoosey/TAB-IGNORE/pkg/hermit"
 )
 
-// Server is the local HTTP streaming server.
+// Server is the local HTTP streaming server plus the LAN media server.
 type Server struct {
-	Addr      string
-	LAN       bool
-	Token     string
-	Library   *lib.Library
-	StatusFn  func(ctx context.Context) (hermit.Status, error)
-	Log       io.Writer
-	server    *http.Server
-	listener  net.Listener
+	Addr     string
+	LAN      bool
+	Token    string
+	Library  *lib.Library
+	StatusFn func(ctx context.Context) (hermit.Status, error)
+	Log      io.Writer
+	server   *http.Server
+	listener net.Listener
+	dlna     *dlnaServer
 }
 
-// New creates a server.
+// New creates a server. The DLNA server is enabled by default and can be
+// disabled with HERMIT_MEDIA_SERVER=0. It listens separately from the loopback
+// API server so TV access never requires exposing the control API.
 func New(addr, token string, library *lib.Library, statusFn func(context.Context) (hermit.Status, error)) *Server {
-	return &Server{Addr: addr, Token: token, LAN: token != "", Library: library, StatusFn: statusFn, Log: io.Discard}
+	s := &Server{Addr: addr, Token: token, LAN: token != "", Library: library, StatusFn: statusFn, Log: io.Discard}
+	if os.Getenv("HERMIT_MEDIA_SERVER") != "0" {
+		s.dlna = newDLNAServer(library)
+	}
+	return s
 }
 
 // Start binds and serves until ctx is canceled.
@@ -51,6 +58,9 @@ func (s *Server) Start(ctx context.Context) error {
 		defer cancel()
 		_ = s.server.Shutdown(shutdownCtx)
 	}()
+	if s.dlna != nil {
+		s.dlna.start(ctx, func(string) {})
+	}
 	err = s.server.Serve(ln)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
@@ -119,7 +129,7 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 	full := filepath.Join(s.Library.Root, rel)
 	rootAbs, _ := filepath.Abs(s.Library.Root)
 	fullAbs, _ := filepath.Abs(full)
-	if !strings.HasPrefix(fullAbs, rootAbs) {
+	if fullAbs != rootAbs && !strings.HasPrefix(fullAbs, rootAbs+string(filepath.Separator)) {
 		http.NotFound(w, r)
 		return
 	}
