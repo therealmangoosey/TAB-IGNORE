@@ -17,21 +17,30 @@ import (
 
 // Client is a metadata provider client.
 type Client struct {
-	DB      *db.DB
-	HTTP    *http.Client
-	TMDBKey string
-	Base    string
+	DB       *db.DB
+	HTTP     *http.Client
+	TMDBKey  string
+	Base     string
+	CacheTTL time.Duration
 }
 
-// NewClient creates a metadata client.
+// NewClient creates a metadata client with the default 24-hour cache TTL.
 func NewClient(database *db.DB, httpClient *http.Client, tmdbKey string) *Client {
+	return NewClientWithTTL(database, httpClient, tmdbKey, 24*time.Hour)
+}
+
+// NewClientWithTTL creates a metadata client with an explicit cache TTL.
+func NewClientWithTTL(database *db.DB, httpClient *http.Client, tmdbKey string, cacheTTL time.Duration) *Client {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 20 * time.Second}
 	}
 	if database == nil {
 		panic("meta client requires a database")
 	}
-	return &Client{DB: database, HTTP: httpClient, TMDBKey: tmdbKey, Base: "https://api.themoviedb.org/3"}
+	if cacheTTL <= 0 {
+		cacheTTL = 24 * time.Hour
+	}
+	return &Client{DB: database, HTTP: httpClient, TMDBKey: tmdbKey, Base: "https://api.themoviedb.org/3", CacheTTL: cacheTTL}
 }
 
 type tmdbSearchResp struct {
@@ -119,6 +128,25 @@ func (c *Client) Search(ctx context.Context, q string, kind hermit.Kind) ([]herm
 func (c *Client) Show(ctx context.Context, ref hermit.Ref) (hermit.Media, []hermit.Season, []hermit.Episode, error) {
 	if ref.TMDBID == 0 {
 		return hermit.Media{}, nil, nil, fmt.Errorf("TMDB ID required")
+	}
+	cacheKind := ref.Kind
+	if cacheKind == hermit.KindAnime {
+		cacheKind = hermit.KindTV
+	}
+	if cached, err := c.DB.GetMediaByTMDB(ctx, ref.TMDBID, cacheKind); err == nil && !cached.MetaFetchedAt.IsZero() && time.Since(cached.MetaFetchedAt) <= c.CacheTTL {
+		var seasons []hermit.Season
+		var episodes []hermit.Episode
+		if cached.Kind == hermit.KindTV {
+			seasons, err = c.DB.GetSeasons(ctx, cached.ID)
+			if err != nil {
+				return hermit.Media{}, nil, nil, err
+			}
+			episodes, err = c.DB.GetEpisodes(ctx, cached.ID, 0)
+			if err != nil {
+				return hermit.Media{}, nil, nil, err
+			}
+		}
+		return cached, seasons, episodes, nil
 	}
 	media, err := c.showDetails(ctx, ref)
 	if err != nil {
@@ -234,12 +262,15 @@ func (c *Client) seasonsAndEpisodes(ctx context.Context, ref hermit.Ref, mediaID
 		return nil, nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil, fmt.Errorf("tmdb details HTTP %d", resp.StatusCode)
+	}
 	var raw struct {
 		Seasons []struct {
-			SeasonNumber      int    `json:"season_number"`
-			Name              string `json:"name"`
-			AirDate           string `json:"air_date"`
-			EpisodeCount      int    `json:"episode_count"`
+			SeasonNumber int    `json:"season_number"`
+			Name         string `json:"name"`
+			AirDate      string `json:"air_date"`
+			EpisodeCount int    `json:"episode_count"`
 		} `json:"seasons"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
@@ -283,12 +314,12 @@ func (c *Client) seasonEpisodes(ctx context.Context, tmdb, season int, mediaID i
 	}
 	var raw struct {
 		Episodes []struct {
-			ID           int     `json:"id"`
+			ID            int    `json:"id"`
 			EpisodeNumber int    `json:"episode_number"`
-			Name         string  `json:"name"`
-			AirDate      string  `json:"air_date"`
-			Runtime      int     `json:"runtime"`
-			StillPath    string  `json:"still_path"`
+			Name          string `json:"name"`
+			AirDate       string `json:"air_date"`
+			Runtime       int    `json:"runtime"`
+			StillPath     string `json:"still_path"`
 		} `json:"episodes"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
