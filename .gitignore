@@ -3,8 +3,8 @@
 *.db
 *.db-shm
 *.db-wal
-hermit
-hmt
+/hmt
+/hermit
 .env
 .env.*
 !.env.example

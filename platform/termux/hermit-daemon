@@ -1,0 +1,10 @@
+#!/data/data/com.termux/files/usr/bin/sh
+# Minimal runit-style respawn wrapper for the hermit daemon.
+# Symlink this into $PREFIX/var/service/hermit/run on runit-based setups.
+
+command -v hmt >/dev/null 2>&1 || { echo "hmt not installed"; exit 1; }
+
+# Re-acquire the wake lock while the queue has work; hmt manages the rest.
+command -v termux-wake-lock >/dev/null 2>&1 && termux-wake-lock || true
+
+exec hmt daemon run
