@@ -36,7 +36,7 @@ func NewQueue(database *db.DB, reg *provider.Registry, dl *fetch.Downloader, cfg
 		max, _ := config.ParseSize(cfg.Power.MaxBytesPerSec)
 		dl = fetch.NewDownloader(fetch.NewClient(nil), max, cfg.Power.ConcurrencyBattery)
 	}
-	return &Queue{DB: database, Registry: reg, Fetcher: dl, Cfg: cfg, running: map[int64]bool{}}
+	return &Queue{DB: database, Registry: reg, Fetcher: dl, Cfg: cfg, running: map[int64]bool{}, batteryPct: -1}
 }
 
 func (q *Queue) SetBattery(pct int, charging bool) {
@@ -49,8 +49,13 @@ func (q *Queue) SetBattery(pct int, charging bool) {
 func (q *Queue) CheckBattery() (bool, string) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if !q.charging && q.batteryPct > 0 && q.batteryPct < q.Cfg.Power.MinBatteryPct {
-		return false, fmt.Sprintf("battery %d%% below minimum", q.batteryPct)
+	if !q.charging {
+		if q.batteryPct < 0 {
+			return false, "battery reading unavailable"
+		}
+		if q.batteryPct <= q.Cfg.Power.MinBatteryPct {
+			return false, fmt.Sprintf("battery %d%% at or below minimum", q.batteryPct)
+		}
 	}
 	return true, ""
 }
@@ -118,6 +123,9 @@ func (q *Queue) runJob(ctx context.Context, job hermit.Job) {
 		delete(q.running, job.ID)
 		q.mu.Unlock()
 	}()
+	tmpDir := filepath.Join(q.Cfg.StateDir, "tmp", fmt.Sprintf("job-%d", job.ID))
+	defer os.RemoveAll(tmpDir)
+
 	reserve, _ := config.ParseSize(q.Cfg.Disk.Reserve)
 	margin, _ := config.ParseSize(q.Cfg.Disk.Margin)
 	job.State = hermit.JobDownloading
@@ -144,7 +152,6 @@ func (q *Queue) runJob(ctx context.Context, job hermit.Job) {
 		return
 	}
 
-	tmpDir := filepath.Join(q.Cfg.StateDir, "tmp", fmt.Sprintf("job-%d", job.ID))
 	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
 		q.failJob(ctx, job, "storage_perm_lost", err.Error())
 		return
@@ -158,7 +165,6 @@ func (q *Queue) runJob(ctx context.Context, job hermit.Job) {
 
 	res, err := q.Fetcher.Download(ctx, job.Source, tmpPath)
 	if err != nil {
-		job.Attempts++
 		q.failJob(ctx, job, "truncated", err.Error())
 		return
 	}
@@ -267,11 +273,34 @@ func firstErr(errs map[string]error) error {
 }
 
 func (q *Queue) failJob(ctx context.Context, job hermit.Job, kind, msg string) {
-	job.State = hermit.JobFailed
 	job.LastError = msg
 	job.ErrKind = kind
-	job.FinishedAt = time.Now()
+	job.TmpPath = ""
+	if q.Cfg.Power.MaxAttempts > 0 && job.Attempts < q.Cfg.Power.MaxAttempts {
+		job.Attempts++
+		job.State = hermit.JobQueued
+		job.NextRetryAt = time.Now().Add(retryBackoff(job.Attempts))
+		job.FinishedAt = time.Time{}
+	} else {
+		job.State = hermit.JobFailed
+		job.FinishedAt = time.Now()
+		job.NextRetryAt = time.Time{}
+	}
 	_ = q.DB.UpdateJob(ctx, job)
+}
+
+func retryBackoff(attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+	backoff := 30 * time.Second
+	for i := 1; i < attempt; i++ {
+		backoff *= 2
+		if backoff >= 30*time.Minute {
+			return 30 * time.Minute
+		}
+	}
+	return backoff
 }
 
 func (q *Queue) finishJob(ctx context.Context, job hermit.Job) {
