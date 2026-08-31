@@ -21,20 +21,12 @@ func TestDLNAMediaServesRangeWithMIME(t *testing.T) {
 	}
 	d := &dlnaServer{library: library}
 	req := httptest.NewRequest("GET", "/media?path=%2FShow%2FEpisode.mp4", nil)
-	req.RemoteAddr = "192.168.1.20:12345"
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Range", "bytes=2-5")
 	w := httptest.NewRecorder()
 	d.serveMedia(w, req)
-	if w.Code != 206 {
-		t.Fatalf("status = %d, want 206", w.Code)
-	}
-	if got := w.Header().Get("Content-Type"); got != "video/mp4" {
-		t.Fatalf("content type = %q, want video/mp4", got)
-	}
-	if got := w.Body.String(); got != "2345" {
-		t.Fatalf("body = %q, want 2345", got)
-	}
-	if got := w.Header().Get("Accept-Ranges"); got != "bytes" {
-		t.Fatalf("accept-ranges = %q, want bytes", got)
-	}
+	if w.Code != 206 { t.Fatalf("status = %d, want 206", w.Code) }
+	if got := w.Header().Get("Content-Type"); got != "video/mp4" { t.Fatalf("content type = %q, want video/mp4", got) }
+	if got := w.Body.String(); got != "2345" { t.Fatalf("body = %q, want 2345", got) }
+	if got := w.Header().Get("Accept-Ranges"); got != "bytes" { t.Fatalf("accept-ranges = %q, want bytes", got) }
 }
