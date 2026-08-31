@@ -48,7 +48,7 @@ func cmdVPN(ctx context.Context, cfg config.Config, args []string) error {
 		if err := vpn.Up(args[1]); err != nil {
 			return err
 		}
-		return daemonRun(ctx, cfg, nil)
+		return daemonRun(ctx, cfg)
 	default:
 		return fmt.Errorf("unknown vpn command %q; use up, down, start, or status", args[0])
 	}
