@@ -36,6 +36,13 @@ func main() {
 		fmt.Println("hermit", version())
 		return
 	}
+	if os.Args[1] == "vpn" {
+		if err := cmdVPN(ctx, cfg, os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "hmt vpn:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := runCommand(ctx, cfg, os.Args[1], os.Args[2:]); err != nil {
 		fmt.Fprintln(os.Stderr, "hmt:", err)
 		os.Exit(1)
@@ -59,6 +66,10 @@ Usage:
   hmt info                runtime information
   hmt doctor              hardware/runtime diagnostics
   hmt daemon start|stop|status|run
+  hmt vpn up <conf>       enable split-tunnel WireGuard for hmt traffic
+  hmt vpn start <conf>    enable split tunnel and run the daemon
+  hmt vpn down            disable the split tunnel
+  hmt vpn status          show split-tunnel status
   hmt search <query>      search metadata and providers
   hmt add <url|ref>       queue a download
   hmt ls                  list download jobs
